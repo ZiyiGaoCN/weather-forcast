@@ -19,7 +19,7 @@ plot_train_progress = False
 if plot_train_progress:
     import matplotlib.pyplot as plt
 
-def train(fcstnet, train_x, train_y, validation_x=None, validation_y=None, restore_session=False):
+def train(fcstnet, train_x, train_y, validation_x=None, validation_y=None, restore_session=False,wandb=None):
     """
     Train the ForecastNet model on a provided dataset. 
     In the following variable descriptions, the input_seq_length is the length of the input sequence 
@@ -117,6 +117,10 @@ def train(fcstnet, train_x, train_y, validation_x=None, validation_y=None, resto
             loss.backward()
             # Update the model parameters
             fcstnet.optimizer.step()
+            
+            # Log the loss to wandb
+            if wandb is not None:
+                wandb.log({'loss': loss.item()})
 
             if count % 50 == 0:
                 print("Average cost after training batch %i of %i: %f" % (count, permutation.shape[0], loss.item()))
@@ -151,6 +155,10 @@ def train(fcstnet, train_x, train_y, validation_x=None, validation_y=None, resto
                     # Calculate the loss
                     loss = F.mse_loss(input=y_valid, target=validation_y)
                 validation_costs.append(loss.item())
+                
+                # Log the loss to wandb
+                if wandb is not None:
+                    wandb.log({'val_loss': loss.item()})
             fcstnet.model.train()
 
         # Print progress

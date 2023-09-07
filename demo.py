@@ -15,6 +15,7 @@ from train import train
 from evaluate import evaluate
 from dataHelpers import generate_data
 from Pytorch.dataset.loading import loading
+import wandb
 
 #Use a fixed seed for repreducible results
 np.random.seed(1)
@@ -32,13 +33,15 @@ learning_rate = 0.0001
 n_epochs= 100
 batch_size = 16
 
+wandb.init(project="weather-forecast",name="UNet_run")
+
 # Initialise model
 fcstnet = forecastNet(in_seq_length=in_seq_length, out_seq_length=out_seq_length, input_dim=input_dim,
                         hidden_dim=hidden_dim, output_dim=output_dim, model_type = model_type, batch_size = batch_size,
                         n_epochs = n_epochs, learning_rate = learning_rate, save_file = './forecastnet.pt')
 
 # Train the model
-training_costs, validation_costs = train(fcstnet, train_x, train_y, valid_x, valid_y, restore_session=False)
+training_costs, validation_costs = train(fcstnet, train_x, train_y, valid_x, valid_y, restore_session=False, wandb)
 # Plot the training curves
 plt.figure()
 plt.plot(training_costs)
