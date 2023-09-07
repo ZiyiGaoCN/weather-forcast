@@ -41,3 +41,8 @@ Run the demo.py script to train and evaluate ForecastNet model on a synthetic da
 - Torch version 1.2.0
 - NumPy 1.14.6.
 
+## RUN
+please directly run `demo.py`
+```
+python demo.py
+```

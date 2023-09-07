@@ -14,21 +14,20 @@ from forecastNet import forecastNet
 from train import train
 from evaluate import evaluate
 from dataHelpers import generate_data
+from Pytorch.dataset.loading import loading
 
 #Use a fixed seed for repreducible results
 np.random.seed(1)
 
-# Generate the dataset
-train_x, train_y, test_x, test_y, valid_x, valid_y, period = generate_data(T=2750, period = 50, n_seqs = 4)
-# train_data, test_data, valid_data, period = generate_data(T=1000, period = 10)
+ds_train,ds_valid =loading('/localdata_ssd/gaoziyi/dataset')
 
 # Model parameters
-model_type = 'dense2' #'dense' or 'conv', 'dense2' or 'conv2'
-in_seq_length = 2 * period
-out_seq_length = period
+model_type = 'UNet' #'dense' or 'conv', 'dense2' or 'conv2'
+in_seq_length = 1
+out_seq_length = 20
 hidden_dim = 24
-input_dim = 1
-output_dim = 1
+input_dim = 70
+output_dim = 5
 learning_rate = 0.0001
 n_epochs= 100
 batch_size = 16
