@@ -31,35 +31,15 @@ from torch.utils.data import DataLoader
 
 
 class WeatherDataet(Dataset):
-    def __init__(self, data_dir , transform=None, target_transform=None):
-        self.img_dir = data_dir
+    def __init__(self, data , transform=None, target_transform=None, num_step = 20):
+        
         self.transform = transform
         self.target_transform = target_transform
-
-        def chunk_time(ds):
-            dims = {k:v for k, v in ds.dims.items()}
-            dims['time'] = 1
-            print(f'chunking dims: {dims}')
-            ds = ds.chunk(dims)
-            return ds
-
-        def load_dataset():
-            ds = []
-            for y in range(2007,2012):
-                data_name = os.path.join(data_dir, f'weather_round1_train_{y}')
-                # print(f'loading {data_name}')
-                x = xr.open_zarr(data_name, consolidated=True)
-                # print(x.time.values[0:9])
-                print(f'{data_name}, {x.time.values[0]} ~ {x.time.values[-1]}')
-                ds.append(x)
-            ds = xr.concat(ds, 'time')
-            ds = chunk_time(ds)
-            return ds
         
-        self.ds = load_dataset().x
+        self.ds = data
 
 
-        self.num_step = 20 # for 5-days
+        self.num_step = num_step #  default: 20, for 5-days
         self.shape = self.ds.shape # batch x channel x lat x lon 
         self.times = self.ds.time.values
         self.init_times = self.times[slice(1, -self.num_step)] 
@@ -121,19 +101,50 @@ class WeatherDataet(Dataset):
         fig, ax = plt.subplots(figsize=(8, 6), subplot_kw={"projection": ccrs.PlateCarree()})
         plot(v, ax, title=f'{name.upper()}')
         
-class WeatherTest(Dataset):
-    def __init__(self) -> None:
+# class WeatherTest(Dataset):
+#     def __init__(self) -> None:
     
         pass
 def split_dataset(data_dir, ratio=0.8, transform=None, target_transform=None):
-    total = WeatherDataet(data_dir, transform, target_transform)
-    train_size = int(len(total) * ratio)
-    test_size = len(total) - train_size
-    train_dataset, test_dataset = torch.utils.data.random_split(total, [train_size, test_size])
-    return train_dataset, test_dataset
+
+    def chunk_time(ds):
+        dims = {k:v for k, v in ds.dims.items()}
+        dims['time'] = 1
+        print(f'chunking dims: {dims}')
+        ds = ds.chunk(dims)
+        return ds
+
+    def load_dataset(data_dir, from_year, to_year):
+        """from_year: included, to_year: excluded"""
+        ds = []
+        for y in range(from_year,to_year):
+            data_name = os.path.join(data_dir, f'weather_round1_train_{y}')
+            # print(f'loading {data_name}')
+            x = xr.open_zarr(data_name, consolidated=True)
+            # print(x.time.values[0:9])
+            print(f'{data_name}, {x.time.values[0]} ~ {x.time.values[-1]}')
+            ds.append(x)
+        ds = xr.concat(ds, 'time')
+        ds = chunk_time(ds)
+        return ds
+
+    train_data = WeatherDataet(load_dataset(data_dir, 2007, 2011).x, transform, target_transform)
+    test_data = WeatherDataet(load_dataset(data_dir, 2011, 2012).x, transform, target_transform)
+    return train_data, test_data
+
+
+
+    # total = WeatherDataet(data_dir, transform, target_transform)
+    # train_size = int(len(total) * ratio)
+    # test_size = len(total) - train_size
+    # train_dataset, test_dataset = torch.utils.data.random_split(total, [train_size, test_size])
+    # return train_dataset, test_dataset
+
+
+
 
 if __name__ == '__main__':
-    train_data, test_data = split_dataset(data_dir= './Data', ratio=0.8,  transform=None, target_transform=None )
+    train_data, test_data = split_dataset(data_dir= '../Data', ratio=0.8,  transform=None, target_transform=None )
 
     train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True)
     test_dataloader = DataLoader(test_data, batch_size=64, shuffle=True)
