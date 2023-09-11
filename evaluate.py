@@ -13,7 +13,7 @@ import torch
 from dataHelpers import format_input
 from calculateError import calculate_error
 
-def evaluate(fcstnet, test_x, test_y, return_lists=False):
+def evaluate(fcstnet, test_dataloader, return_lists=False):
     """
     Calculate various error metrics on a test dataset
     :param fcstnet: A forecastNet object defined by the class in forecastNet.py
@@ -25,27 +25,13 @@ def evaluate(fcstnet, test_x, test_y, return_lists=False):
     """
     fcstnet.model.eval()
 
-    # Load model parameters
-    checkpoint = torch.load(fcstnet.save_file, map_location=fcstnet.device)
-    fcstnet.model.load_state_dict(checkpoint['model_state_dict'])
-    fcstnet.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    # # Load model parameters
+    # checkpoint = torch.load(fcstnet.save_file, map_location=fcstnet.device)
+    # fcstnet.model.load_state_dict(checkpoint['model_state_dict'])
+    # fcstnet.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     with torch.no_grad():
-        if type(test_x) is np.ndarray:
-            test_x = torch.from_numpy(test_x).type(torch.FloatTensor)
-        if type(test_y) is np.ndarray:
-            test_y = torch.from_numpy(test_y).type(torch.FloatTensor)
-
         # Format the inputs
-        test_x = format_input(test_x)
-
-        # Send to CPU/GPU
-        test_x = test_x.to(fcstnet.device)
-        test_y = test_y.to(fcstnet.device)
-
-        # Number of batch samples
-        n_samples = test_x.shape[0]
-
         # Inference
         y_pred_list = []
         # Compute outputs for a mixture density network output
@@ -58,22 +44,18 @@ def evaluate(fcstnet, test_x, test_y, return_lists=False):
         # Compute outputs for a linear output
         elif fcstnet.model_type == 'dense2' or fcstnet.model_type == 'conv2':
             y_pred = fcstnet.model(test_x, test_y, is_training=False)
+        elif fcstnet.model_type == 'UNet':
+            for idx, (input) in enumerate(test_dataloader):
+                input = input[0].to(fcstnet.device)
+                B, in_seq, C_in, H, W = input.shape
+                input = input.view(B, in_seq*C_in, H, W)
+                outputs = fcstnet.model(input)
+                outputs_formatted = outputs.view(B, 20, 5, H, W)
+                y_pred_list.append(outputs_formatted.cpu().numpy())
+                
+            y_pred = np.concatenate(y_pred_list, axis=0)
+        return y_pred
 
-        mase_list = []
-        smape_list = []
-        nrmse_list = []
-        for i in range(n_samples):
-            mase, se, smape, nrmse = calculate_error(y_pred[:, i, :].cpu().numpy(), test_y[:, i, :].cpu().numpy())
-            mase_list.append(mase)
-            smape_list.append(smape)
-            nrmse_list.append(nrmse)
-        # writer.close()
-        mase = np.mean(mase_list)
-        smape = np.mean(smape_list)
-        nrmse = np.mean(nrmse_list)
-
-    if return_lists:
-        return np.ndarray.flatten(np.array(mase_list)), np.ndarray.flatten(np.array(smape_list)), np.ndarray.flatten(
-            np.array(nrmse_list))
-    else:
-        return mase, smape, nrmse
+if __name__ == '__main__':
+    pass
+    

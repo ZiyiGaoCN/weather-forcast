@@ -31,7 +31,7 @@ from torch.utils.data import DataLoader
 
 
 class WeatherDataet(Dataset):
-    def __init__(self, data , transform=None, target_transform=None, num_step = 20):
+    def __init__(self, data , transform=None, target_transform=None, num_step = 20, test=False):
         
         self.transform = transform
         self.target_transform = target_transform
@@ -132,7 +132,21 @@ def split_dataset(data_dir, ratio=0.8, transform=None, target_transform=None):
     test_data = WeatherDataet(load_dataset(data_dir, 2011, 2012).x, transform, target_transform)
     return train_data, test_data
 
+def load_dataset_test(data_dir):
+    import os 
+    test_dir = os.path.join(data_dir,'weather_round1_test/input')
+    lists = os.listdir(test_dir)
+    lists = sorted(lists)
+    inputs = []
+    for file in lists:
+        input = torch.load(os.path.join(test_dir,file))
+        inputs.append(input)
+    inputs = torch.stack(inputs)
+    print(inputs.shape)
+    return inputs
 
+def test_dataset(data_dir, transform=None, target_transform=None):
+    return load_dataset_test(data_dir)
 
     # total = WeatherDataet(data_dir, transform, target_transform)
     # train_size = int(len(total) * ratio)
@@ -144,13 +158,19 @@ def split_dataset(data_dir, ratio=0.8, transform=None, target_transform=None):
 
 
 if __name__ == '__main__':
-    train_data, test_data = split_dataset(data_dir= '../../dataset', ratio=0.8,  transform=None, target_transform=None )
+    pass
+    # test_dataset = WeatherDataet(test_data, transform=None, target_transform=None,test=True)
+    # test_dataloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    # for i, x in enumerate(test_dataloader):
+    #     print(i, x.shape)
+    #     break
+    # train_data, test_data = split_dataset(data_dir= '../../dataset', ratio=0.8,  transform=None, target_transform=None )
 
-    train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True)
-    test_dataloader = DataLoader(test_data, batch_size=64, shuffle=True)
-    for i, (x, y) in enumerate(train_dataloader):
-        print(i, x.shape, y.shape)
-        break
+    # train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True)
+    # test_dataloader = DataLoader(test_data, batch_size=64, shuffle=True)
+    # for i, (x, y) in enumerate(train_dataloader):
+    #     print(i, x.shape, y.shape)
+    #     break
 # a = WeatherDataet('./Data')
 # a.visualize(time='20080101-00', name='t2m')
 # a.visualize(time='20080101-00', name='u10')
