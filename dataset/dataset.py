@@ -144,10 +144,13 @@ def split_dataset(data_dir, ratio=0.8, transform=None, target_transform=None):
 
 
 if __name__ == '__main__':
-    train_data, test_data = split_dataset(data_dir= '../Data', ratio=0.8,  transform=None, target_transform=None )
+    train_data, test_data = split_dataset(data_dir= '../../dataset', ratio=0.8,  transform=None, target_transform=None )
 
     train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True)
     test_dataloader = DataLoader(test_data, batch_size=64, shuffle=True)
+    for i, (x, y) in enumerate(train_dataloader):
+        print(i, x.shape, y.shape)
+        break
 # a = WeatherDataet('./Data')
 # a.visualize(time='20080101-00', name='t2m')
 # a.visualize(time='20080101-00', name='u10')

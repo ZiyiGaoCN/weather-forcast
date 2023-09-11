@@ -7,22 +7,26 @@ class UNet(nn.Module):
         
         # Encoder (Downsampling)
         
-        hidden_channels 
+        # hidden_channels 
         
         self.enc1 = self.conv_block(in_channels, 128)
-        self.enc2 = self.conv_block(128, 256)
-        self.enc3 = self.conv_block(256, 512)
-        self.enc4 = self.conv_block(512, 1024)
+        self.down1 = self.downconv_block(128, 256,True)
+        self.enc2 = self.conv_block(256, 256)
+        self.down2 = self.downconv_block(256, 512)
+        self.enc3 = self.conv_block(512, 512)
+        self.down3 = self.downconv_block(512, 1024)
+        self.enc4 = self.conv_block(1024, 1024)
+        
         
         # MaxPooling
-        self.pool = nn.MaxPool2d(2)
+        # self.pool = nn.MaxPool2d(2)
         
         # Decoder (Upsampling)
         self.up3 = self.upconv_block(1024, 512)
         self.dec3 = self.conv_block(1024, 512)
         self.up2 = self.upconv_block(512, 256)
         self.dec2 = self.conv_block(512, 256)
-        self.up1 = self.upconv_block(256, 128)
+        self.up1 = self.upconv_block(256, 128,True)
         self.dec1 = self.conv_block(256, 128)
         
         # Final Output
@@ -31,9 +35,9 @@ class UNet(nn.Module):
     def forward(self, x):
         # Encoder
         enc1 = self.enc1(x)
-        enc2 = self.enc2(self.pool(enc1))
-        enc3 = self.enc3(self.pool(enc2))
-        enc4 = self.enc4(self.pool(enc3))
+        enc2 = self.enc2(self.down1(enc1))
+        enc3 = self.enc3(self.down2(enc2))
+        enc4 = self.enc4(self.down3(enc3))
         
         # Decoder
         up3 = self.up3(enc4)
@@ -55,12 +59,18 @@ class UNet(nn.Module):
             nn.Conv2d(in_channels, out_channels, 3, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(out_channels, out_channels, 3, padding=1),
+            nn.ReLU(inplace=True),
+        )
+    
+    def downconv_block(self, in_channels, out_channels,first=False):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3+int(first==True),stride=2, padding=1),
             nn.ReLU(inplace=True)
         )
     
-    def upconv_block(self, in_channels, out_channels):
+    def upconv_block(self, in_channels, out_channels,first=False):
         return nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2+(first==True), stride=2),
             nn.ReLU(inplace=True)
         )
 

@@ -13,6 +13,7 @@ import torch
 
 from denseForecastNet import ForecastNetDenseModel, ForecastNetDenseModel2
 from convForecastNet import ForecastNetConvModel, ForecastNetConvModel2
+from model.CNN import UNet
 from dataHelpers import format_input
 
 class forecastNet:
@@ -61,7 +62,8 @@ class forecastNet:
             self.model = ForecastNetDenseModel2(self.input_dim, self.hidden_dim, self.output_dim, self.in_seq_length, self.out_seq_length, self.device)
         elif model_type == 'conv2':
             self.model = ForecastNetConvModel2(self.input_dim, self.hidden_dim, self.output_dim, self.in_seq_length, self.out_seq_length, self.device)
-
+        elif model_type == 'UNet':
+            self.model = UNet(self.input_dim*2, self.output_dim*20, self.hidden_dim)
 
         # # Use multiple GPUS
         # if torch.cuda.device_count() > 1:

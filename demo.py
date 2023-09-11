@@ -14,13 +14,16 @@ from forecastNet import forecastNet
 from train import train
 from evaluate import evaluate
 from dataHelpers import generate_data
-from Pytorch.dataset.loading import loading
+from dataset.loading import loading
 import wandb
+
+from dataset.dataset import split_dataset
+from torch.utils.data import DataLoader
 
 #Use a fixed seed for repreducible results
 np.random.seed(1)
 
-ds_train,ds_valid =loading('/localdata_ssd/gaoziyi/dataset')
+
 
 # Model parameters
 model_type = 'UNet' #'dense' or 'conv', 'dense2' or 'conv2'
@@ -40,8 +43,12 @@ fcstnet = forecastNet(in_seq_length=in_seq_length, out_seq_length=out_seq_length
                         hidden_dim=hidden_dim, output_dim=output_dim, model_type = model_type, batch_size = batch_size,
                         n_epochs = n_epochs, learning_rate = learning_rate, save_file = './forecastnet.pt')
 
+train_data, valid_data = split_dataset('../dataset',ratio=0.8, transform=None, target_transform=None)
+train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True)
+valid_dataloader = DataLoader(valid_data, batch_size=64, shuffle=True)
+
 # Train the model
-training_costs, validation_costs = train(fcstnet, train_x, train_y, valid_x, valid_y, restore_session=False, wandb)
+training_costs, validation_costs = train(fcstnet, train_dataloader,valid_dataloader, restore_session=False, wandb=wandb)
 # Plot the training curves
 plt.figure()
 plt.plot(training_costs)
