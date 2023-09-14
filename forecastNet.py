@@ -21,7 +21,10 @@ class forecastNet:
     Class for ForecastNet.
     """
 
-    def __init__(self, in_seq_length, out_seq_length, input_dim, hidden_dim, output_dim, model_type='dense', batch_size=1, n_epochs=100, learning_rate=0.0001, save_file='./forecastnet.pt'):
+    def __init__(self, in_seq_length, out_seq_length, input_dim, 
+                 hidden_dim, output_dim, model_type='dense', batch_size=1, n_epochs=100, 
+                 learning_rate=0.0001, weight_decay=1e-5, save_file='./forecastnet.pt',
+                 device=None):
         """
         Constructor
         :param in_seq_length: Sequence length of the inputs.
@@ -49,9 +52,14 @@ class forecastNet:
         self.n_epochs = n_epochs
         self.learning_rate = learning_rate
         self.save_file = save_file
+        self.weight_decay = weight_decay
 
         # Use GPU if available
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        
+        if device is not None:
+            self.device = torch.device(device)
+        else :  
+            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         # Create the ForecastNet model
         if model_type == 'dense':
@@ -74,7 +82,7 @@ class forecastNet:
         self.model.to(self.device)
 
         # Define the optimizer
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
 
         # print('Trainable variables = ', np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()]))
         # print('')

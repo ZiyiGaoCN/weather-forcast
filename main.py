@@ -35,17 +35,19 @@ output_dim = 5
 learning_rate = 0.0001
 n_epochs= 100
 batch_size = 16
+weight_decay= 1e-5
 
 wandb.init(project="weather-forecast",name="UNet_run")
 
 # Initialise model
 fcstnet = forecastNet(in_seq_length=in_seq_length, out_seq_length=out_seq_length, input_dim=input_dim,
                         hidden_dim=hidden_dim, output_dim=output_dim, model_type = model_type, batch_size = batch_size,
-                        n_epochs = n_epochs, learning_rate = learning_rate, save_file = './forecastnet.pt')
+                        n_epochs = n_epochs, learning_rate = learning_rate, weight_decay=1e-5, 
+                        save_file = './forecastnet.pt',device = "cuda:1")
 
 train_data, valid_data = split_dataset('../dataset',ratio=0.8, transform=None, target_transform=None)
-train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True)
-valid_dataloader = DataLoader(valid_data, batch_size=64, shuffle=True)
+train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True,num_workers=16)
+valid_dataloader = DataLoader(valid_data, batch_size=64, shuffle=True,num_workers=16)
 
 # Train the model
 training_costs, validation_costs = train(fcstnet, train_dataloader,valid_dataloader, restore_session=False, wandb=wandb)
