@@ -20,10 +20,12 @@ import os
 import pandas as pd
 import xarray as xr
 import numpy as np
+import time
 
 import cartopy.crs as ccrs
 import matplotlib.pyplot as plt 
 # import matplotlib.patches as patches
+
 
 import torch
 from torch.utils.data import Dataset
@@ -31,7 +33,7 @@ from torch.utils.data import DataLoader
 
 
 class WeatherDataet(Dataset):
-    def __init__(self, data , transform=None, target_transform=None, num_step = 20, test=False):
+    def __init__(self, data , transform=None, target_transform=None, num_step = 20):
         
         self.transform = transform
         self.target_transform = target_transform
@@ -47,7 +49,10 @@ class WeatherDataet(Dataset):
         self.names = list(self.ds.channel.values)
         self.test_names = self.names[-5:]
 
+        self.mean = self.ds.mean(dim='time')
+        self.std = self.ds.std(dim='time')
 
+        self.ds = (self.ds - self.mean) / self.std
 
 
     def __len__(self):
@@ -105,48 +110,36 @@ class WeatherDataet(Dataset):
 #     def __init__(self) -> None:
     
         pass
+
+
+def chunk_time(ds):
+    dims = {k:v for k, v in ds.dims.items()}
+    dims['time'] = 1
+    print(f'chunking dims: {dims}')
+    ds = ds.chunk(dims)
+    return ds
+
+def load_dataset(data_dir, from_year, to_year):
+    """from_year: included, to_year: excluded"""
+    ds = []
+    for y in range(from_year,to_year):
+        data_name = os.path.join(data_dir, f'weather_round1_train_{y}')
+        # print(f'loading {data_name}')
+        x = xr.open_zarr(data_name, consolidated=True)
+        # print(x.time.values[0:9])
+        print(f'{data_name}, {x.time.values[0]} ~ {x.time.values[-1]}')
+        ds.append(x)
+    ds = xr.concat(ds, 'time')
+    ds = chunk_time(ds)
+    return ds
+
 def split_dataset(data_dir, ratio=0.8, transform=None, target_transform=None):
-
-    def chunk_time(ds):
-        dims = {k:v for k, v in ds.dims.items()}
-        dims['time'] = 1
-        print(f'chunking dims: {dims}')
-        ds = ds.chunk(dims)
-        return ds
-
-    def load_dataset(data_dir, from_year, to_year):
-        """from_year: included, to_year: excluded"""
-        ds = []
-        for y in range(from_year,to_year):
-            data_name = os.path.join(data_dir, f'weather_round1_train_{y}')
-            # print(f'loading {data_name}')
-            x = xr.open_zarr(data_name, consolidated=True)
-            # print(x.time.values[0:9])
-            print(f'{data_name}, {x.time.values[0]} ~ {x.time.values[-1]}')
-            ds.append(x)
-        ds = xr.concat(ds, 'time')
-        ds = chunk_time(ds)
-        return ds
 
     train_data = WeatherDataet(load_dataset(data_dir, 2007, 2011).x, transform, target_transform)
     test_data = WeatherDataet(load_dataset(data_dir, 2011, 2012).x, transform, target_transform)
     return train_data, test_data
 
-def load_dataset_test(data_dir):
-    import os 
-    test_dir = os.path.join(data_dir,'weather_round1_test/input')
-    lists = os.listdir(test_dir)
-    lists = sorted(lists)
-    inputs = []
-    for file in lists:
-        input = torch.load(os.path.join(test_dir,file))
-        inputs.append(input)
-    inputs = torch.stack(inputs)
-    print(inputs.shape)
-    return inputs
 
-def test_dataset(data_dir, transform=None, target_transform=None):
-    return load_dataset_test(data_dir)
 
     # total = WeatherDataet(data_dir, transform, target_transform)
     # train_size = int(len(total) * ratio)
@@ -155,22 +148,19 @@ def test_dataset(data_dir, transform=None, target_transform=None):
     # return train_dataset, test_dataset
 
 
-
-
+import matplotlib.pyplot as plt
 if __name__ == '__main__':
-    pass
-    # test_dataset = WeatherDataet(test_data, transform=None, target_transform=None,test=True)
-    # test_dataloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
-    # for i, x in enumerate(test_dataloader):
-    #     print(i, x.shape)
-    #     break
-    # train_data, test_data = split_dataset(data_dir= '../../dataset', ratio=0.8,  transform=None, target_transform=None )
+    # train_data, test_data = split_dataset(data_dir= '../Data', ratio=0.8,  transform=None, target_transform=None )
 
     # train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True)
     # test_dataloader = DataLoader(test_data, batch_size=64, shuffle=True)
-    # for i, (x, y) in enumerate(train_dataloader):
-    #     print(i, x.shape, y.shape)
-    #     break
+    # a = load_dataset('../Data', 2007, 2012).x
+    data = WeatherDataet(load_dataset( '../Data', 2007, 2012).x,)
+    a = data[0]
+
+
+
+
 # a = WeatherDataet('./Data')
 # a.visualize(time='20080101-00', name='t2m')
 # a.visualize(time='20080101-00', name='u10')
