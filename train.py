@@ -91,9 +91,9 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
     # Set in training mode
     fcstnet.model.train()
 
-    if validation_dataloader is not None:
-        valid_loss=validate(fcstnet, validation_dataloader,wandb=wandb)
-        validation_costs.append(valid_loss)
+    # if validation_dataloader is not None:
+    #     valid_loss=validate(fcstnet, validation_dataloader,wandb=wandb)
+    #     validation_costs.append(valid_loss)
 
     # Training loop
     for epoch in range(fcstnet.n_epochs):
@@ -132,7 +132,7 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
                 # Calculate the outputs
                 outputs = fcstnet.model(input, target, is_training=True)
                 loss = F.mse_loss(input=outputs, target=target)
-            elif fcstnet.model_type == 'UNet':
+            elif fcstnet.model_type == 'UNet' or fcstnet.model_type == 'Swin-UNet':
                 B, in_seq, C_in, H, W = input.shape
                 B, out_seq, C_out, H, W = target.shape
                 input = input.view(B, in_seq*C_in, H, W)

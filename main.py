@@ -26,10 +26,10 @@ np.random.seed(1)
 
 
 # Model parameters
-model_type = 'UNet' #'dense' or 'conv', 'dense2' or 'conv2'
-in_seq_length = 1
+model_type = 'Swin-UNet' #'dense' or 'conv', 'dense2' or 'conv2'
+in_seq_length = 2
 out_seq_length = 20
-hidden_dim = 24
+hidden_dim = 96
 input_dim = 70
 output_dim = 5
 learning_rate = 0.0001
