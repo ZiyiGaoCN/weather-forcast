@@ -128,7 +128,7 @@ def load_dataset(data_dir, from_year, to_year):
     """from_year: included, to_year: excluded"""
     ds = []
     for y in range(from_year,to_year):
-        data_name = os.path.join(data_dir, f'weather_round1_train_{y}')
+        data_name = os.path.join(data_dir, f'moved_weather_round2_train_{y}')
         # print(f'loading {data_name}')
         x = xr.open_zarr(data_name, consolidated=True)
         # print(x.time.values[0:9])
@@ -140,8 +140,8 @@ def load_dataset(data_dir, from_year, to_year):
 
 def split_dataset(data_dir, ratio=0.8, transform=None, target_transform=None):
 
-    train_data = WeatherDataet(load_dataset(data_dir, 2007, 2011).x, transform, target_transform, data_dir=data_dir,is_train=True)
-    test_data = WeatherDataet(load_dataset(data_dir, 2011, 2012).x, transform, target_transform, data_dir=data_dir,is_train=False)
+    train_data = WeatherDataet(load_dataset(data_dir, 2012, 2016).x, transform, target_transform, data_dir=data_dir,is_train=True)
+    test_data = WeatherDataet(load_dataset(data_dir, 2016, 2017).x, transform, target_transform, data_dir=data_dir,is_train=False)
     return train_data, test_data
 
 
