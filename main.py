@@ -17,8 +17,10 @@ from dataHelpers import generate_data
 from dataset.loading import loading
 import wandb
 
-from dataset.dataset import split_dataset
+from dataset.dataset_mem import split_dataset
 from torch.utils.data import DataLoader
+
+from dataset.transform.transform import Normalize, InverseNormalize
 
 #Use a fixed seed for repreducible results
 np.random.seed(1)
@@ -26,10 +28,10 @@ np.random.seed(1)
 
 
 # Model parameters
-model_type = 'UNet' #'dense' or 'conv', 'dense2' or 'conv2'
-in_seq_length = 1
+model_type = 'Swin-UNet' #'dense' or 'conv', 'dense2' or 'conv2'
+in_seq_length = 2
 out_seq_length = 20
-hidden_dim = 24
+hidden_dim = 96
 input_dim = 70
 output_dim = 5
 learning_rate = 0.0001
@@ -37,7 +39,7 @@ n_epochs= 100
 batch_size = 16
 weight_decay= 1e-5
 
-wandb.init(project="weather-forecast",name="UNet_run")
+wandb.init(project="weather-forecast",name="Swin_UNet_run")
 
 # Initialise model
 fcstnet = forecastNet(in_seq_length=in_seq_length, out_seq_length=out_seq_length, input_dim=input_dim,
@@ -45,12 +47,18 @@ fcstnet = forecastNet(in_seq_length=in_seq_length, out_seq_length=out_seq_length
                         n_epochs = n_epochs, learning_rate = learning_rate, weight_decay=1e-5, 
                         save_file = './forecastnet.pt',device = "cuda:1")
 
-train_data, valid_data = split_dataset('../dataset',ratio=0.8, transform=None, target_transform=None)
-train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True,num_workers=16)
-valid_dataloader = DataLoader(valid_data, batch_size=64, shuffle=True,num_workers=16)
+transform_train = Normalize('../dataset/normalization', normalization_type = 'TAO', is_target = False)
+transform_target = Normalize('../dataset/normalization',  normalization_type = 'TAO', is_target = True)
+inverse_transform_target = InverseNormalize('../dataset/normalization',  normalization_type = 'TAO', is_target = True)
+
+train_data, valid_data = split_dataset('../dataset',ratio=0.8,
+                                       transform=None,
+                                       target_transform=None)
+train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True,num_workers=96)
+valid_dataloader = DataLoader(valid_data, batch_size=64, shuffle=False,num_workers=24)
 
 # Train the model
-training_costs, validation_costs = train(fcstnet, train_dataloader,valid_dataloader, restore_session=False, wandb=wandb)
+training_costs, validation_costs = train(fcstnet, train_dataloader,valid_dataloader, restore_session=False, wandb=wandb, inverse_transform_target = None)
 # Plot the training curves
 plt.figure()
 plt.plot(training_costs)

@@ -20,8 +20,61 @@ plot_train_progress = False
 if plot_train_progress:
     import matplotlib.pyplot as plt
 
-def validate(fcstnet, validation_dataloader,wandb=None):
+def compute_rmse(output,target):
+    '''
+        result: (batch x lat x lon), eg: N x H x W
+        target: (batch x lat x lon), eg: N x H x W
+    '''
+    
+    B = 30 
+    output = output[:,B:-B,B:-B]
+    target = target[:,B:-B,B:-B]
+    
+    square = F.mse_loss(input=output, target=target, reduction='none')
+    square = torch.mean(square,dim=(1,2))
+    
+    result = torch.sqrt(square)
+    result = torch.mean(result)
+    return result.item()
+
+def     eval(output,target):
+    '''
+        result: (batch x step x channel x lat x lon), eg: N x 20 x 5 x H x W
+        target: (batch x step x channel x lat x lon), eg: N x 20 x 5 x H x W
+    '''
+    climates = {
+        't2m': 3.1084048748016357,
+        'u10': 4.114771819114685,
+        'v10': 4.184110546112061,
+        'msl': 729.5839385986328,
+        'tp': 0.49046186606089276,
+    }
+    
+    result = {}
+    for cid, (name, clim) in enumerate(climates.items()):
+        res = []
+        for sid in range(output.shape[1]):
+            out = output[:, sid, cid,:,:]
+            tgt = target[:, sid, cid,:,:]
+            rmse = compute_rmse(out, tgt)
+            # nrmse = (rmse - clim) / clim
+            res.append(rmse)
+            
+            # normalized rmse, lower is better,
+            # 0 means equal to climate baseline, 
+            # less than 0 means better than climate baseline,   
+            # -1 means perfect prediction            
+
+        score = np.mean(res)
+        result[name] = float(score)
+
+    score = np.mean(list(result.values()))
+    result['score'] = float(score)
+    return result
+
+def validate(fcstnet, validation_dataloader,wandb=None, inverse_transform_target=None):
     batch_loss = []
+    batch_score = []
     with torch.no_grad():
         fcstnet.model.eval()
         for i,(input,target) in enumerate(tqdm.tqdm(validation_dataloader)):
@@ -36,10 +89,31 @@ def validate(fcstnet, validation_dataloader,wandb=None):
             loss = F.mse_loss(input=outputs, target=target)
             batch_loss.append(loss.item())
             # Log the loss to wandb
+            
+            outputs =outputs.view(B, out_seq, C_out, H, W)
+            target = target.view(B, out_seq, C_out, H, W)
+            
+            if inverse_transform_target is not None:
+                outputs = inverse_transform_target(outputs)
+                target = inverse_transform_target(target)
+            
+            eval_output = outputs.cpu().detach()
+            eval_target = target.cpu().detach()
+            
+            score = eval(eval_output, eval_target)
+            batch_score.append(score)
+            
     if wandb is not None:
-        wandb.log({'val_loss': loss.item()})
+        final_loss = np.mean(batch_loss)
+        final_score = {
+            k : np.mean([s[k] for s in batch_score])
+            for k in batch_score[0].keys()    
+        }
+        wandb.log({'val_loss': final_loss})
+        wandb.log(final_score)
+        
     return np.mean(batch_loss)
-def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session=False,wandb=None):
+def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session=False,wandb=None, inverse_transform_target=None):
     """
     Train the ForecastNet model on a provided dataset. 
     In the following variable descriptions, the input_seq_length is the length of the input sequence 
@@ -92,7 +166,7 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
     fcstnet.model.train()
 
     if validation_dataloader is not None:
-        valid_loss=validate(fcstnet, validation_dataloader,wandb=wandb)
+        valid_loss=validate(fcstnet, validation_dataloader,wandb=wandb,inverse_transform_target=inverse_transform_target)
         validation_costs.append(valid_loss)
 
     # Training loop
@@ -132,7 +206,7 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
                 # Calculate the outputs
                 outputs = fcstnet.model(input, target, is_training=True)
                 loss = F.mse_loss(input=outputs, target=target)
-            elif fcstnet.model_type == 'UNet':
+            elif fcstnet.model_type == 'UNet' or fcstnet.model_type == 'Swin-UNet':
                 B, in_seq, C_in, H, W = input.shape
                 B, out_seq, C_out, H, W = target.shape
                 input = input.view(B, in_seq*C_in, H, W)
@@ -167,7 +241,7 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
 
         # Validation tests
         if validation_dataloader is not None:
-            valid_loss=validate(fcstnet, validation_dataloader,wandb=wandb)
+            valid_loss=validate(fcstnet, validation_dataloader,wandb=wandb,inverse_transform_target=inverse_transform_target)
             validation_costs.append(valid_loss)
         # Print progress
         print("Average epoch training cost: ", epoch_cost)
