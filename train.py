@@ -14,6 +14,7 @@ from dataHelpers import format_input
 from gaussian import gaussian_loss, mse_loss
 import torch.nn.functional as F
 import tqdm
+import os
 
 # Set plot_train_progress to True if you want a plot of the forecast after each epoch
 plot_train_progress = False
@@ -72,20 +73,20 @@ def     eval(output,target):
     result['score'] = float(score)
     return result
 
-def validate(fcstnet, validation_dataloader,wandb=None, inverse_transform_target=None):
+def validate(train_param,model, validation_dataloader,wandb=None, inverse_transform_target=None):
     batch_loss = []
     batch_score = []
     with torch.no_grad():
-        fcstnet.model.eval()
+        model.eval()
         for i,(input,target) in enumerate(tqdm.tqdm(validation_dataloader)):
             # Send input and output data to the GPU/CPU
-            input = input.to(fcstnet.device)
-            target = target.to(fcstnet.device)
+            input = input.to(train_param.device)
+            target = target.to(train_param.device)
             B, in_seq, C_in, H, W = input.shape
             B, out_seq, C_out, H, W = target.shape
             input = input.view(B, in_seq*C_in, H, W)
             target = target.view(B, out_seq*C_out, H, W)
-            outputs = fcstnet.model(input)
+            outputs = model(input)
             loss = F.mse_loss(input=outputs, target=target)
             batch_loss.append(loss.item())
             # Log the loss to wandb
@@ -113,7 +114,7 @@ def validate(fcstnet, validation_dataloader,wandb=None, inverse_transform_target
         wandb.log(final_score)
         
     return np.mean(batch_loss)
-def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session=False,wandb=None, inverse_transform_target=None):
+def train(train_param, model, train_dataloader, validation_dataloader=None,wandb=None, inverse_transform_target=None):
     """
     Train the ForecastNet model on a provided dataset. 
     In the following variable descriptions, the input_seq_length is the length of the input sequence 
@@ -148,12 +149,18 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
     # validation_x = validation_x.to(fcstnet.device)
     # validation_y = validation_y.to(fcstnet.device)
 
+    # train_param.optimizer
+
+    if train_param.optimizer.name == 'Adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=train_param.optimizer.learning_rate, weight_decay=train_param.optimizer.weight_decay)
+
     # Initialise model with predefined parameters
-    if restore_session:
+    if hasattr(train_param,'restore_ression'):
         # Load model parameters
-        checkpoint = torch.load(fcstnet.save_file)
-        fcstnet.model.load_state_dict(checkpoint['model_state_dict'])
-        fcstnet.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        checkpoint = torch.load(model.save_file)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
 
     # Number of batch samples
     # n_samples = train_x.shape[0]
@@ -163,20 +170,21 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
     validation_costs = []
 
     # Set in training mode
-    fcstnet.model.train()
+    model.to(train_param.device)
+    model.train()
 
     if validation_dataloader is not None:
-        valid_loss=validate(fcstnet, validation_dataloader,wandb=wandb,inverse_transform_target=inverse_transform_target)
+        valid_loss=validate(train_param,model, validation_dataloader,wandb=wandb,inverse_transform_target=inverse_transform_target)
         validation_costs.append(valid_loss)
 
     # Training loop
-    for epoch in range(fcstnet.n_epochs):
+    for epoch in range(train_param.n_epochs):
 
         # Start the epoch timer
         t_start = time.time()
 
         # Print the epoch number
-        print('Epoch: %i of %i' % (epoch + 1, fcstnet.n_epochs))
+        print('Epoch: %i of %i' % (epoch + 1, train_param.n_epochs))
 
         # Initial average epoch cost over the sequence
         batch_cost = []
@@ -186,38 +194,28 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
 
         # Permutation to randomly sample from the dataset
         # permutation = np.random.permutation(np.arange(0, n_samples, fcstnet.batch_size))
-        fcstnet.model.train()
+        model.train()
         # Loop over the permuted indexes, extract a sample at that index and run it through the model
         for i,(input,target) in enumerate(tqdm.tqdm(train_dataloader)):
             # Send input and output data to the GPU/CPU
-            input = input.to(fcstnet.device)
-            target = target.to(fcstnet.device)
+            input = input.to(train_param.device)
+            target = target.to(train_param.device)
 
             # Zero the gradients
-            fcstnet.optimizer.zero_grad()
+            optimizer.zero_grad()
             # Compute outputs and loss for a mixture density network output
-            if fcstnet.model_type == 'dense' or fcstnet.model_type == 'conv':
-                # Calculate the outputs
-                outputs, mu, sigma = fcstnet.model(input, target, is_training=True)
-                # Calculate the loss
-                loss = gaussian_loss(z=target, mu=mu, sigma=sigma)
-            # Compute outputs and loss for a linear output
-            elif fcstnet.model_type == 'dense2' or fcstnet.model_type == 'conv2':
-                # Calculate the outputs
-                outputs = fcstnet.model(input, target, is_training=True)
-                loss = F.mse_loss(input=outputs, target=target)
-            elif fcstnet.model_type == 'UNet' or fcstnet.model_type == 'Swin-UNet':
-                B, in_seq, C_in, H, W = input.shape
-                B, out_seq, C_out, H, W = target.shape
-                input = input.view(B, in_seq*C_in, H, W)
-                target = target.view(B, out_seq*C_out, H, W)
-                outputs = fcstnet.model(input)
-                loss = F.mse_loss(input=outputs, target=target)
+            
+            B, in_seq, C_in, H, W = input.shape
+            B, out_seq, C_out, H, W = target.shape
+            input = input.view(B, in_seq*C_in, H, W)
+            target = target.view(B, out_seq*C_out, H, W)
+            outputs = model(input)
+            loss = F.mse_loss(input=outputs, target=target)
             batch_cost.append(loss.item())
             # Calculate the derivatives
             loss.backward()
             # Update the model parameters
-            fcstnet.optimizer.step()
+            optimizer.step()
             
             # Log the loss to wandb
             if wandb is not None:
@@ -231,17 +229,9 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
         # Calculate the average training cost over the sequence
         training_costs.append(epoch_cost)
 
-        # Plot an animation of the training progress
-        if plot_train_progress:
-            plt.cla()
-            plt.plot(np.arange(input.shape[0], input.shape[0] + target.shape[0]), target[:, 0, 0])
-            temp = outputs.detach()
-            plt.plot(np.arange(input.shape[0], input.shape[0] + target.shape[0]), temp[:, 0, 0])
-            plt.pause(0.1)
-
         # Validation tests
         if validation_dataloader is not None:
-            valid_loss=validate(fcstnet, validation_dataloader,wandb=wandb,inverse_transform_target=inverse_transform_target)
+            valid_loss=validate(train_param,model, validation_dataloader,wandb=wandb,inverse_transform_target=inverse_transform_target)
             validation_costs.append(valid_loss)
         # Print progress
         print("Average epoch training cost: ", epoch_cost)
@@ -249,8 +239,8 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
             print('Average validation cost:     ', valid_loss)
         print("Epoch time:                   %f seconds" % (time.time() - t_start))
         print("Estimated time to complete:   %.2f minutes, (%.2f seconds)" %
-              ((fcstnet.n_epochs - epoch - 1) * (time.time() - t_start) / 60,
-               (fcstnet.n_epochs - epoch - 1) * (time.time() - t_start)))
+              ((train_param.n_epochs - epoch - 1) * (time.time() - t_start) / 60,
+               (train_param.n_epochs - epoch - 1) * (time.time() - t_start)))
 
         # Save a model checkpoint
         best_result = False
@@ -262,9 +252,9 @@ def train(fcstnet, train_dataloader, validation_dataloader=None, restore_session
                 best_result = True
         if best_result:
             torch.save({
-                'model_state_dict': fcstnet.model.state_dict(),
-                'optimizer_state_dict': fcstnet.optimizer.state_dict(),
-            }, fcstnet.save_file)
-            print("Model saved in path: %s" % fcstnet.save_file)
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+            }, os.path.join(train_param.save_file,'save.pt'))
+            print("Model saved in path: %s" % train_param.save_file)
 
     return training_costs, validation_costs
