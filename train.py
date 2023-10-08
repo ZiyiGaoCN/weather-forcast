@@ -10,16 +10,14 @@ Link to the paper: https://arxiv.org/abs/2002.04155
 import numpy as np
 import torch
 import time
-from dataHelpers import format_input
-from gaussian import gaussian_loss, mse_loss
 import torch.nn.functional as F
 import tqdm
 import os
 
 # Set plot_train_progress to True if you want a plot of the forecast after each epoch
-plot_train_progress = False
-if plot_train_progress:
-    import matplotlib.pyplot as plt
+# plot_train_progress = False
+# if plot_train_progress:
+    # import matplotlib.pyplot as plt
 
 def compute_rmse(output,target):
     '''
@@ -250,11 +248,11 @@ def train(train_param, model, train_dataloader, validation_dataloader=None,wandb
         else:
             if validation_costs[-1] == min(validation_costs):
                 best_result = True
-        if best_result:
+        if best_result or (epoch+1) % 10 == 0:
             torch.save({
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-            }, os.path.join(train_param.save_file,'save.pt'))
+            }, os.path.join(train_param.save_file,f'save_{epoch}.pt'))
             print("Model saved in path: %s" % train_param.save_file)
 
     return training_costs, validation_costs

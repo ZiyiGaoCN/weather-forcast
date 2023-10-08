@@ -14,7 +14,6 @@ import torch
 from omegaconf import DictConfig, OmegaConf , open_dict
 import importlib
 
-from forecastNet import forecastNet
 from train import train
 from evaluate import evaluate
 from dataHelpers import generate_data
@@ -26,6 +25,7 @@ from torch.utils.data import DataLoader
 
 from dataset.transform.transform import Normalize, InverseNormalize
 import datetime
+import os
 
 #Use a fixed seed for repreducible results
 np.random.seed(1)
@@ -36,7 +36,7 @@ def set_seed(seed_value = 0):
         torch.cuda.manual_seed_all(seed_value)
     np.random.seed(seed_value)
 
-@hydra.main(version_base=None, config_path='./cfgs', config_name="swin_transformer")
+@hydra.main(version_base=None, config_path='./cfgs', config_name="vanilla_transformer")
 def main(cfg:DictConfig):
 
     set_seed(cfg.seed)
@@ -45,7 +45,9 @@ def main(cfg:DictConfig):
     current_time = datetime.datetime.now()
     with open_dict(cfg):
         cfg.train.save_file = f'./{cfg.train.ckpt_dir}/{current_time.strftime("%Y-%m-%d-%H-%M-%S")}'
-
+    if not os.path.exists(cfg.train.save_file):
+        os.mkdir(cfg.train.save_file)
+    
     print(cfg)
     
     # Initialize model 
