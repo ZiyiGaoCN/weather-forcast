@@ -562,7 +562,7 @@ class PatchEmbed(nn.Module):
         return flops
 
 
-class SwinTransformerSys(nn.Module):
+class VIT(nn.Module):
     r""" Swin Transformer
         A PyTorch impl of : `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows`  -
           https://arxiv.org/pdf/2103.14030
@@ -614,7 +614,7 @@ class SwinTransformerSys(nn.Module):
         self.hidden_dim = hidden_dim
         self.ape = ape
         self.patch_norm = patch_norm
-        self.num_features = int(self.hidden_dim * 2 ** (self.num_layers - 1))
+        self.num_features = int(self.hidden_dim )
         self.num_features_up = int(self.hidden_dim * 2)
         self.mlp_ratio = mlp_ratio
         self.final_upsample = final_upsample
@@ -641,9 +641,9 @@ class SwinTransformerSys(nn.Module):
         # build encoder and bottleneck layers
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
-            layer = BasicLayer(dim=int(self.hidden_dim * 2 ** i_layer),
-                               input_resolution=(patches_resolution[0] // (2 ** i_layer),
-                                                 patches_resolution[1] // (2 ** i_layer)),
+            layer = BasicLayer(dim=int(self.hidden_dim),
+                               input_resolution=(patches_resolution[0] ,
+                                                 patches_resolution[1] ),
                                depth=depths[i_layer],
                                num_heads=num_heads[i_layer],
                                window_size=window_size,
@@ -652,7 +652,7 @@ class SwinTransformerSys(nn.Module):
                                drop=drop_rate, attn_drop=attn_drop_rate,
                                drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
                                norm_layer=norm_layer,
-                               downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
+                               downsample=None,
                                use_checkpoint=use_checkpoint)
             self.layers.append(layer)
         
@@ -715,15 +715,14 @@ class SwinTransformerSys(nn.Module):
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
-        x_downsample = []
+        # x_downsample = []
 
         for layer in self.layers:
-            x_downsample.append(x)
+            # x_downsample.append(x)
             x = layer(x)
-
         x = self.norm(x)  # B L C
-  
-        return x, x_downsample
+        
+        return x #, x_downsample
 
     #Dencoder and Skip connection
     def forward_up_features(self, x, x_downsample):
@@ -756,25 +755,30 @@ class SwinTransformerSys(nn.Module):
         return x
 
     def forward(self, x):
-        x, x_downsample = self.forward_features(x)
-        x = self.forward_up_features(x,x_downsample)
+        x= self.forward_features(x)
+        # x = self.forward_up_features(x,x_downsample)
         x = self.up_x4(x)
 
         return x
 
-    def flops(self):
-        flops = 0
-        flops += self.patch_embed.flops()
-        for i, layer in enumerate(self.layers):
-            flops += layer.flops()
-        flops += self.num_features * self.patches_resolution[0] * self.patches_resolution[1] // (2 ** self.num_layers)
-        flops += self.num_features * self.out_chans
-        return flops
     
 if __name__ == '__main__':
     pass
-    # import torch
-    # input = torch.randn(1,3,161,161)
-    # network = SwinTransformerSys(img_size = 161, patch_size = 4, in_chans = 3, num_classes = 100,embed_dim=96*5,window_size=5)
-    # output = network(input)
-    # print(output.shape)
+    import torch
+    input = torch.randn(1,3,161,161)
+
+    # 2x5x14x161x161 
+    # 192x40x40
+    
+
+    network = VIT(in_seq_length=1,
+                 out_seq_length=20,
+                 input_dim=3,
+                 output_dim=5,
+                 lat_dim=161,
+                 lon_dim=161,
+                 patch_size=4,
+                 window_size=40
+                )
+    output = network(input)
+    print(output.shape)

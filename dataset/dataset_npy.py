@@ -6,14 +6,13 @@ import time
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
+from dataset_mem import load_dataset
 
 class WeatherDataet_npy(Dataset):
 
-    def __init__(self, data, start = 0, end = 7304, transform=None, target_transform=None):
-        
-
+    def __init__(self, data, start = 0, end = 7304, transform=None, target_transform=None, autoregressive = False):        
         assert start < end
-        assert start > 0
+        assert start >= 0
         assert end <= 7304
         # left inclusive, right exclusive
 
@@ -23,10 +22,14 @@ class WeatherDataet_npy(Dataset):
         self.end = end
         
         self.data = data
-        self.num_step = 20 #  default: 20, for 5-days
-        
+        self.num_step = 1 if autoregressive else 20  #  default: 20, for 5-days
         
         self.num_data = (end  - start ) - (self.num_step + 1)
+
+        if autoregressive:
+            self.target_range  = slice(65,70)
+        else:
+            self.target_range  = slice(0,70)
         
     def __len__(self):
         return self.num_data
@@ -37,7 +40,7 @@ class WeatherDataet_npy(Dataset):
         # you can reduce it for auto-regressive training 
         
         input = self.data[id : id + 2, : , :, :]
-        target = self.data[id + 2 : id + 22, 65: 70, : , : ]
+        target = self.data[id + 2 : id + 2 + self.num_step, self.target_range , : , : ]
         
         input = torch.from_numpy(input.values)
         target = torch.from_numpy(target.values)
@@ -51,10 +54,23 @@ class WeatherDataet_npy(Dataset):
         return input, target
     
         
-def split_dataset_npy(npy_dir, transform = None, target_transform=None ):
-    data = np.memmap(os.path.join(npy_dir, 'data_normailze.npy'), dtype = 'float32',mode = 'r', shape = (7304, 70, 161, 161) , order = 'C') 
-    train = WeatherDataet_npy(data, 0, 5844, transform , target_transform )
-    valid = WeatherDataet_npy(data, 5844, 7304, transform , target_transform )
+def split_dataset_npy(npy_dir, transform = None, target_transform=None, autoregressive = False,preload_to_memory = False ):
+    if not os.path.exists(os.path.join(npy_dir, 'data_normailze.npy')):
+        # raise
+        print('convert xarray data to npy')
+        data = np.memmap('./data_correct.npy', dtype = 'float32',mode = 'w+', shape = (7304, 70, 161, 161) , order = 'C')
+        time_accumulate = 0
+        for q in range(2007, 2012):
+            a = load_dataset('../../Data', q, q+ 1).x
+            data[time_accumulate: time_accumulate + len(a.time.values), :, :, :] = a.values
+        data.flush()
+    else:
+        data = np.memmap(os.path.join(npy_dir, 'data_normailze.npy'), dtype = 'float32',mode = 'r', shape = (7304, 70, 161, 161) , order = 'C') 
+    
+    if preload_to_memory:
+        data = np.array(data)
+    train = WeatherDataet_npy(data, 0, 5844, transform , target_transform , autoregressive )
+    valid = WeatherDataet_npy(data, 5844, 7304, transform , target_transform , autoregressive )
     return train, valid
 
 

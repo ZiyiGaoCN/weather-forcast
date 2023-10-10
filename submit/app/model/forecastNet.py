@@ -13,19 +13,15 @@ import torch
 
 from denseForecastNet import ForecastNetDenseModel, ForecastNetDenseModel2
 from convForecastNet import ForecastNetConvModel, ForecastNetConvModel2
-from model.CNN import UNet
-from model.swin_unet import SwinTransformerSys
 from dataHelpers import format_input
+from CNN import UNet
 
 class forecastNet:
     """
     Class for ForecastNet.
     """
 
-    def __init__(self, in_seq_length, out_seq_length, input_dim, 
-                 hidden_dim, output_dim, model_type='dense', batch_size=1, n_epochs=100, 
-                 learning_rate=0.0001, weight_decay=1e-5, save_file='./forecastnet.pt',
-                 device=None):
+    def __init__(self, in_seq_length, out_seq_length, input_dim, hidden_dim, output_dim, model_type='dense', batch_size=1, n_epochs=100, learning_rate=0.0001, save_file='./forecastnet.pt'):
         """
         Constructor
         :param in_seq_length: Sequence length of the inputs.
@@ -53,14 +49,9 @@ class forecastNet:
         self.n_epochs = n_epochs
         self.learning_rate = learning_rate
         self.save_file = save_file
-        self.weight_decay = weight_decay
 
         # Use GPU if available
-        
-        if device is not None:
-            self.device = torch.device(device)
-        else :  
-            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         # Create the ForecastNet model
         if model_type == 'dense':
@@ -72,11 +63,7 @@ class forecastNet:
         elif model_type == 'conv2':
             self.model = ForecastNetConvModel2(self.input_dim, self.hidden_dim, self.output_dim, self.in_seq_length, self.out_seq_length, self.device)
         elif model_type == 'UNet':
-            self.model = UNet(self.input_dim*2, self.output_dim*20, self.hidden_dim)
-        elif model_type == 'Swin-UNet':
-            self.model = SwinTransformerSys(img_size = 161, patch_size = 4, in_chans = self.input_dim * self.in_seq_length, num_classes = self.output_dim * self.out_seq_length ,embed_dim=self.hidden_dim,window_size=5)
-        else: 
-            raise ValueError('Invalid model type')
+            self.model = UNet(self.input_dim, self.output_dim*self.out_seq_length, self.hidden_dim)
         # # Use multiple GPUS
         # if torch.cuda.device_count() > 1:
         #     print('Using %d GPUs'%(torch.cuda.device_count()))
@@ -86,7 +73,7 @@ class forecastNet:
         self.model.to(self.device)
 
         # Define the optimizer
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
         # print('Trainable variables = ', np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()]))
         # print('')

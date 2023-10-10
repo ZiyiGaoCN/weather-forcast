@@ -1,0 +1,1 @@
+docker run --gpus all -v /localdata_ssd/gaoziyi/dataset_old/weather_round1_test/input:/tcdata/input --memory=32g --memory-swappiness=100 -t aliyun:0.1 

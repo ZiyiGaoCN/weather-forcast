@@ -2,5 +2,7 @@ __pycache__
 *.pt
 wandb
 
+outputs
 *npy
-*png
+FourCastNet/
+checkpoint/
