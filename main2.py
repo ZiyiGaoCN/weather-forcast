@@ -58,13 +58,11 @@ def main(cfg:DictConfig):
     model = model_class(**cfg.model.param)
 
     if cfg.logger is not None:
+        wandb.init(project=cfg.logger.project, name=cfg.logger.name)
+        # wandb.config.update(cfg)
         wandb.config = OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=True
         )
-
-        wandb.init(
-            project=cfg.logger.project,
-            name=cfg.logger.name)
 
     # fcstnet = forecastNet(in_seq_length=in_seq_length, out_seq_length=out_seq_length, input_dim=input_dim,
     #                         hidden_dim=hidden_dim, output_dim=output_dim, model_type = model_type, batch_size = batch_size,
