@@ -20,7 +20,7 @@ from dataHelpers import generate_data
 from dataset.loading import loading
 import wandb
 
-from dataset.dataset_mem import split_dataset
+from dataset.dataset_npy import split_dataset
 from torch.utils.data import DataLoader
 
 from dataset.transform.transform import Normalize, InverseNormalize
@@ -46,7 +46,7 @@ def main(cfg:DictConfig):
     with open_dict(cfg):
         cfg.train.save_file = f'./{cfg.train.ckpt_dir}/{current_time.strftime("%Y-%m-%d-%H-%M-%S")}'
     if not os.path.exists(cfg.train.save_file):
-        os.mkdir(cfg.train.save_file)
+        os.mkdirs(cfg.train.save_file, exist_ok=True)
     
     print(cfg)
     
@@ -72,9 +72,11 @@ def main(cfg:DictConfig):
 
     train_data, valid_data = split_dataset(cfg.data.data_path,ratio=0.8,
                                         transform=None,
-                                        target_transform=None)
-    train_dataloader = DataLoader(train_data, batch_size=cfg.data.batch_size_train, shuffle=True, num_workers=16)
-    valid_dataloader = DataLoader(valid_data, batch_size=cfg.data.batch_size_val, shuffle=False, num_workers=16)
+                                        target_transform=None,
+                                        autoregressive = cfg.train.autoregressive,
+                                        preload_to_memory = cfg.dataloader.preload_to_memory)
+    train_dataloader = DataLoader(train_data, batch_size=cfg.data.batch_size_train, shuffle=True, num_workers= cfg.train.dataloader.num_workers)
+    valid_dataloader = DataLoader(valid_data, batch_size=cfg.data.batch_size_val, shuffle=False, num_workers= cfg.train.dataloader.num_workers)
 
     # Train the model
     training_costs, validation_costs = train(cfg.train,model, train_dataloader,valid_dataloader, wandb=wandb, inverse_transform_target = None)

@@ -1,0 +1,45 @@
+model:
+  model_path: model.afno #'dense' or 'conv', 'dense2' or 'conv2'
+  model_type: AFNONet
+  param: 
+    embed_dim: 768
+    depth: 12
+    mlp_ratio: 4.
+    drop_rate: 0.
+    drop_path_rate: 0.
+    sparsity_threshold: 0.01
+    hard_thresholding_fraction: 1.0
+    img_size: (720, 1440)
+    params:
+      patch_size: 120
+      N_in_channels: 3
+      N_out_channels: 3
+      num_blocks: 5
+
+
+data: 
+  data_path : ../dataset
+  augment: False
+  batch_size_train: 64
+  batch_size_val: 64
+train: 
+  optimizer:
+    name: Adam
+    learning_rate: 0.00001
+    weight_decay: 1e-5
+  n_epochs: 100  
+  ckpt_dir: checkpoint
+  device: cuda:1
+  autoregressive: True
+
+  dataloader:
+    num_workers: 8
+    preload_to_memory: True
+    npy_dir: '.'
+
+logger: #default wandb
+  project: weather-forecast
+  name: AFNO-run
+
+seed: 114514
+
