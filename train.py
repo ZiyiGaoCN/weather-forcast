@@ -84,7 +84,13 @@ def validate(train_param,model, validation_dataloader,wandb=None, inverse_transf
             B, out_seq, C_out, H, W = target.shape
             input = input.view(B, in_seq*C_in, H, W)
             target = target.view(B, out_seq*C_out, H, W)
-            outputs = model(input)
+            if not train_param.autoregressive:
+                outputs = model(input)
+            else:
+                outputs = torch.zeros(size=(B, out_seq* C_out, H, W))
+                for i in range(20):
+                    tmp = model(tmp)
+                    outputs[:, i, ...] = tmp[:,-5:, ...]
             loss = F.mse_loss(input=outputs, target=target)
             batch_loss.append(loss.item())
             # Log the loss to wandb

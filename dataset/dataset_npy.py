@@ -8,12 +8,19 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from dataset_mem import load_dataset
 
+year_len = (np.array([ 366 if i%4 == 0  else 365  for i in range(2007, 2018)]) )*4  # 2007 - 2017
+year_acc = np.cumsum(year_len)
+year_dic = { i: year_acc[i-2007] for i in range(2007, 2018)}
+year_dic[2006] = 0
+
 class WeatherDataet_npy(Dataset):
 
-    def __init__(self, data, start = 0, end = 7304, transform=None, target_transform=None, autoregressive = False):        
+    def __init__(self, data,range , transform=None, target_transform=None, autoregressive = False):        
+        start = year_dic[range[0]]
+        end = year_dic[range[1]]
         assert start < end
         assert start >= 0
-        assert end <= 7304
+        assert end <= 16072
         # left inclusive, right exclusive
 
         self.transform = transform
@@ -54,13 +61,13 @@ class WeatherDataet_npy(Dataset):
         return input, target
     
         
-def split_dataset_npy(npy_dir, transform = None, target_transform=None, autoregressive = False,preload_to_memory = False ):
+def split_dataset_npy(npy_dir, transform = None, target_transform=None, autoregressive = False,preload_to_memory = False, dataloader_para = None ):
     if not os.path.exists(os.path.join(npy_dir, 'data_normailze.npy')):
         # raise
         print('convert xarray data to npy')
         data = np.memmap('./data_correct.npy', dtype = 'float32',mode = 'w+', shape = (7304, 70, 161, 161) , order = 'C')
         time_accumulate = 0
-        for q in range(2007, 2012):
+        for q in range(2007, 2017):
             a = load_dataset('../../Data', q, q+ 1).x
             data[time_accumulate: time_accumulate + len(a.time.values), :, :, :] = a.values
         data.flush()
@@ -69,8 +76,8 @@ def split_dataset_npy(npy_dir, transform = None, target_transform=None, autoregr
     
     if preload_to_memory:
         data = np.array(data)
-    train = WeatherDataet_npy(data, 0, 5844, transform , target_transform , autoregressive )
-    valid = WeatherDataet_npy(data, 5844, 7304, transform , target_transform , autoregressive )
+    train = WeatherDataet_npy(data, dataloader_para.train_range, transform , target_transform , autoregressive )
+    valid = WeatherDataet_npy(data, dataloader_para.val_range, transform , target_transform , autoregressive= False )
     return train, valid
 
 

@@ -74,7 +74,7 @@ def main(cfg:DictConfig):
                                         transform=None,
                                         target_transform=None,
                                         autoregressive = cfg.train.autoregressive,
-                                        preload_to_memory = cfg.dataloader.preload_to_memory)
+                                        dataloader_para= cfg.train.dataloader )
     train_dataloader = DataLoader(train_data, batch_size=cfg.data.batch_size_train, shuffle=True, num_workers= cfg.train.dataloader.num_workers)
     valid_dataloader = DataLoader(valid_data, batch_size=cfg.data.batch_size_val, shuffle=False, num_workers= cfg.train.dataloader.num_workers)
 
