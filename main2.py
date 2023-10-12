@@ -58,7 +58,10 @@ def main(cfg:DictConfig):
     model = model_class(**cfg.model.param)
 
     if cfg.logger is not None:
-        wandb.init(project=cfg.logger.project, name=cfg.logger.name)
+        wandb.init(
+            config=cfg,
+            project=cfg.logger.project,
+            name=cfg.logger.name)
         # wandb.config.update(cfg)
         wandb.config = OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=True
