@@ -36,7 +36,7 @@ def compute_rmse(output,target):
     result = torch.mean(result)
     return result.item()
 
-def     eval(output,target):
+def eval(output,target):
     '''
         result: (batch x step x channel x lat x lon), eg: N x 20 x 5 x H x W
         target: (batch x step x channel x lat x lon), eg: N x 20 x 5 x H x W
@@ -48,30 +48,36 @@ def     eval(output,target):
         'msl': 729.5839385986328,
         'tp': 0.49046186606089276,
     }
+
+    sequence = {
+        '1': 3,
+        '3': 11,
+        '5': 19,
+    }
     
     result = {}
     for cid, (name, clim) in enumerate(climates.items()):
         res = []
-        for sid in range(output.shape[1]):
+        for (s_name,sid) in sequence.items():
             out = output[:, sid, cid,:,:]
             tgt = target[:, sid, cid,:,:]
             rmse = compute_rmse(out, tgt)
             # nrmse = (rmse - clim) / clim
-            res.append(rmse)
-            
+            # res.append(rmse)
+            # score = np.mean(res)
+            result[name+'-'+s_name] = float(rmse)
             # normalized rmse, lower is better,
             # 0 means equal to climate baseline, 
             # less than 0 means better than climate baseline,   
             # -1 means perfect prediction            
 
-        score = np.mean(res)
-        result[name] = float(score)
+        
 
-    score = np.mean(list(result.values()))
-    result['score'] = float(score)
+    # score = np.mean(list(result.values()))
+    # result['score'] = float(score)
     return result
 
-def validate(train_param,model, validation_dataloader,wandb=None, inverse_transform_target=None):
+def validate(train_param,model, validation_dataloader,wandb=None, inverse_transform_target=None, step=1):
     batch_loss = []
     batch_score = []
     with torch.no_grad():
@@ -84,13 +90,18 @@ def validate(train_param,model, validation_dataloader,wandb=None, inverse_transf
             B, out_seq, C_out, H, W = target.shape
             input = input.view(B, in_seq*C_in, H, W)
             target = target.view(B, out_seq*C_out, H, W)
-            if not train_param.autoregressive:
+            if step == 1:
                 outputs = model(input)
             else:
-                outputs = torch.zeros(size=(B, out_seq* C_out, H, W))
-                for i in range(20):
-                    tmp = model(tmp)
-                    outputs[:, i, ...] = tmp[:,-5:, ...]
+                # raise NotImplementedError
+                outputs = []
+                input_ = input
+                for i in range(step):
+                    tmp = model(input_)
+                    outputs.append(tmp[:, -5:, :, :].clone().cpu())
+                    input_ = torch.cat([input_[:, C_in:, :, :], tmp], dim=1)
+                    
+                outputs = torch.cat(outputs, dim=1).to(train_param.device)
             loss = F.mse_loss(input=outputs, target=target)
             batch_loss.append(loss.item())
             # Log the loss to wandb
@@ -102,23 +113,30 @@ def validate(train_param,model, validation_dataloader,wandb=None, inverse_transf
                 outputs = inverse_transform_target(outputs)
                 target = inverse_transform_target(target)
             
-            eval_output = outputs.cpu().detach()
-            eval_target = target.cpu().detach()
-            
-            score = eval(eval_output, eval_target)
-            batch_score.append(score)
+            if step==20:
+                eval_output = outputs.cpu().detach()
+                eval_target = target.cpu().detach()
+                
+                score = eval(eval_output, eval_target)
+                batch_score.append(score)
             
     if wandb is not None:
-        final_loss = np.mean(batch_loss)
-        final_score = {
-            k : np.mean([s[k] for s in batch_score])
-            for k in batch_score[0].keys()    
-        }
-        wandb.log({'val_loss': final_loss})
-        wandb.log(final_score)
+        if step == 1:
+            final_loss = np.mean(batch_loss)
+            wandb.log({'val_loss': final_loss})
+        
+        if step==20:    
+            final_score = {
+                k : np.mean([s[k] for s in batch_score])
+                for k in batch_score[0].keys()    
+            }
+            wandb.log(final_score)
+            final_loss = np.mean(batch_loss)
+            wandb.log({'val_loss_step20': final_loss})
+        
         
     return np.mean(batch_loss)
-def train(train_param, model, train_dataloader, validation_dataloader=None,wandb=None, inverse_transform_target=None):
+def train(train_param, model, train_dataloader, validation_dataloader=None,valid_dataloader_20step=None,wandb=None, inverse_transform_target=None):
     """
     Train the ForecastNet model on a provided dataset. 
     In the following variable descriptions, the input_seq_length is the length of the input sequence 
@@ -177,9 +195,9 @@ def train(train_param, model, train_dataloader, validation_dataloader=None,wandb
     model.to(train_param.device)
     model.train()
 
-    if validation_dataloader is not None:
-        valid_loss=validate(train_param,model, validation_dataloader,wandb=wandb,inverse_transform_target=inverse_transform_target)
-        validation_costs.append(valid_loss)
+    if valid_dataloader_20step:
+        valid_loss=validate(train_param,model, valid_dataloader_20step,wandb=wandb,inverse_transform_target=inverse_transform_target,step=20)
+        # validation_costs.append(valid_loss)
 
     # Training loop
     for epoch in range(train_param.n_epochs):
@@ -237,6 +255,10 @@ def train(train_param, model, train_dataloader, validation_dataloader=None,wandb
         if validation_dataloader is not None:
             valid_loss=validate(train_param,model, validation_dataloader,wandb=wandb,inverse_transform_target=inverse_transform_target)
             validation_costs.append(valid_loss)
+
+        if valid_dataloader_20step is not None and (epoch+1) % 5 == 0:
+            valid_loss=validate(train_param,model, valid_dataloader_20step,wandb=wandb,inverse_transform_target=inverse_transform_target,step=20)
+            
         # Print progress
         print("Average epoch training cost: ", epoch_cost)
         if validation_dataloader is not None:
@@ -254,7 +276,7 @@ def train(train_param, model, train_dataloader, validation_dataloader=None,wandb
         else:
             if validation_costs[-1] == min(validation_costs):
                 best_result = True
-        if best_result or (epoch+1) % 10 == 0:
+        if (epoch+1) % 10 == 0:
             torch.save({
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),

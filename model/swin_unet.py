@@ -606,6 +606,7 @@ class SwinTransformerSys(nn.Module):
 
         # print("SwinTransformerSys expand initial----depths:{};depths_decoder:{};drop_path_rate:{};num_classes:{}".format(depths,
         # depths_decoder,drop_path_rate,num_classes))
+        self.in_seq_length = in_seq_length
         self.lat_dim = lat_dim
         self.lon_dim = lon_dim
         self.in_chans = in_seq_length * input_dim
@@ -687,7 +688,7 @@ class SwinTransformerSys(nn.Module):
 
         if self.final_upsample == "expand_first":
             print("---final upsample expand_first---")
-            self.up = FinalPatchExpand_X4(input_resolution=(self.lat_dim//patch_size,self.lon_dim//patch_size),dim_scale=4,dim=self.hidden_dim,extra_dim=1)
+            self.up = FinalPatchExpand_X4(input_resolution=(self.lat_dim//patch_size,self.lon_dim//patch_size),dim_scale=patch_size,dim=self.hidden_dim,extra_dim=1)
             self.output = nn.Conv2d(in_channels=self.hidden_dim,out_channels=self.out_chans,kernel_size=1,bias=False)
 
         self.apply(self._init_weights)

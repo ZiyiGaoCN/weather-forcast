@@ -6,3 +6,5 @@ outputs
 *npy
 FourCastNet/
 checkpoint/
+
+*/test.ipynb
