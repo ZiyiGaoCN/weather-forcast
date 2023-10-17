@@ -528,8 +528,8 @@ class PatchEmbed(nn.Module):
     def __init__(self, img_size=224, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None , extra_dim=1):
         super().__init__()
         img_size = to_2tuple(img_size)
-        patch_size = to_2tuple(patch_size)
-        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]
+        patch_size = patch_size
+        patches_resolution = [img_size[0] // patch_size, img_size[1] // patch_size]
         self.img_size = img_size
         self.patch_size = patch_size
         self.patches_resolution = patches_resolution
@@ -538,7 +538,16 @@ class PatchEmbed(nn.Module):
         self.in_chans = in_chans
         self.embed_dim = embed_dim
 
-        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=(patch_size[0]+extra_dim,patch_size[1]+extra_dim), stride=patch_size)
+        assert (embed_dim % 7 == 0), "embed_dim must be divisible by 7."
+        assert (patch_size == 2), f"patch_size must be 2, but{patch_size}."
+        self.proj = nn.Conv2d(5, embed_dim//7, kernel_size=(patch_size+extra_dim,patch_size+extra_dim), stride=(patch_size,patch_size))
+        self.project3d = nn.Conv3d(
+            in_channels=5,
+            out_channels=embed_dim//7,
+            kernel_size=(2+extra_dim,2+extra_dim,2+extra_dim),
+            stride=(2,2,2),
+            )
+        
         if norm_layer is not None:
             self.norm = norm_layer(embed_dim)
         else:
@@ -549,14 +558,23 @@ class PatchEmbed(nn.Module):
         # FIXME look at relaxing size constraints
         assert H == self.img_size[0] and W == self.img_size[1], \
             f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
-        x = self.proj(x).flatten(2).transpose(1, 2)  # B Ph*Pw C
+        x_air,x_surface = torch.split(x, 65, dim=1)
+        # x = x.view(B, 5, 14, H, W)
+        x_air = x_air.view(B, 5, 13 , H, W)
+        #split at dim2 
+        x_air = self.project3d(x_air)
+        x_surface = self.proj(x_surface).unsqueeze(2)
+        x = torch.cat([x_air,x_surface],dim=2) # B, C, 7, H, W
+        x = x.reshape(B, self.embed_dim, H // self.patch_size, W // self.patch_size)
+        x = x.flatten(2).transpose(1,2)
+        # x = self.proj(x).flatten(2).transpose(1, 2)  # B Ph*Pw C
         if self.norm is not None:
             x = self.norm(x)
         return x
 
     def flops(self):
         Ho, Wo = self.patches_resolution
-        flops = Ho * Wo * self.embed_dim * self.in_chans * (self.patch_size[0] * self.patch_size[1])
+        flops = Ho * Wo * self.embed_dim * self.in_chans * (self.patch_size * self.patch_size)
         if self.norm is not None:
             flops += Ho * Wo * self.embed_dim
         return flops
@@ -606,6 +624,7 @@ class SwinTransformerSys(nn.Module):
 
         # print("SwinTransformerSys expand initial----depths:{};depths_decoder:{};drop_path_rate:{};num_classes:{}".format(depths,
         # depths_decoder,drop_path_rate,num_classes))
+        self.in_seq_length = in_seq_length
         self.lat_dim = lat_dim
         self.lon_dim = lon_dim
         self.in_chans = in_seq_length * input_dim
@@ -711,6 +730,11 @@ class SwinTransformerSys(nn.Module):
 
     #Encoder and Bottleneck
     def forward_features(self, x):
+
+        B,C,H,W = x.shape
+        x=x.view(B,self.in_seq_length,-1,H,W)
+        x=x[:,-1,:,:,:]
+
         x = self.patch_embed(x)
         if self.ape:
             x = x + self.absolute_pos_embed
