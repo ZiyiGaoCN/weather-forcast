@@ -20,7 +20,7 @@ from dataHelpers import generate_data
 from dataset.loading import loading
 import wandb
 
-from dataset.dataset_npy import split_dataset
+from dataset.dataset_npy import split_dataset_npy
 from torch.utils.data import DataLoader
 
 from dataset.transform.transform import Normalize, InverseNormalize
@@ -36,7 +36,7 @@ def set_seed(seed_value = 0):
         torch.cuda.manual_seed_all(seed_value)
     np.random.seed(seed_value)
 
-@hydra.main(version_base=None, config_path='./cfgs', config_name="vanilla_transformer")
+@hydra.main(version_base=None, config_path='./cfgs', config_name="swin_AR")
 def main(cfg:DictConfig):
 
     set_seed(cfg.seed)
@@ -46,7 +46,7 @@ def main(cfg:DictConfig):
     with open_dict(cfg):
         cfg.train.save_file = f'./{cfg.train.ckpt_dir}/{current_time.strftime("%Y-%m-%d-%H-%M-%S")}'
     if not os.path.exists(cfg.train.save_file):
-        os.mkdirs(cfg.train.save_file, exist_ok=True)
+        os.mkdir(cfg.train.save_file)
     
     print(cfg)
     
@@ -58,10 +58,14 @@ def main(cfg:DictConfig):
     model = model_class(**cfg.model.param)
 
     if cfg.logger is not None:
-        wandb.init(
-            config=cfg,
+        config = OmegaConf.to_container(
+            cfg, resolve=True, throw_on_missing=True
+        )
+        run = wandb.init(
             project=cfg.logger.project,
-            name=cfg.logger.name)
+            name=cfg.logger.name,
+            config=config)
+        
         # wandb.config.update(cfg)
 
     # fcstnet = forecastNet(in_seq_length=in_seq_length, out_seq_length=out_seq_length, input_dim=input_dim,
@@ -73,16 +77,12 @@ def main(cfg:DictConfig):
     # transform_target = Normalize('../dataset/normalization',  normalization_type = 'TAO', is_target = True)
     # inverse_transform_target = InverseNormalize('../dataset/normalization',  normalization_type = 'TAO', is_target = True)
 
-    train_data, valid_data = split_dataset(cfg.data.data_path,ratio=0.8,
-                                        transform=None,
-                                        target_transform=None,
-                                        autoregressive = cfg.train.autoregressive,
-                                        preload_to_memory = cfg.dataloader.preload_to_memory)
-    train_dataloader = DataLoader(train_data, batch_size=cfg.data.batch_size_train, shuffle=True, num_workers= cfg.train.dataloader.num_workers)
-    valid_dataloader = DataLoader(valid_data, batch_size=cfg.data.batch_size_val, shuffle=False, num_workers= cfg.train.dataloader.num_workers)
-
+    train_data, valid_data, valid_data_20step = split_dataset_npy(**cfg.data, autoregressive=cfg.train.autoregressive,transform=None, target_transform=None)
+    train_dataloader = DataLoader(train_data, batch_size=cfg.train.dataloader.batch_size_train, shuffle=True, num_workers= cfg.train.dataloader.num_workers)
+    valid_dataloader = DataLoader(valid_data, batch_size=cfg.train.dataloader.batch_size_val, shuffle=False, num_workers= cfg.train.dataloader.num_workers)
+    valid_dataloader_20step = DataLoader(valid_data_20step, batch_size=cfg.train.dataloader.batch_size_val, shuffle=False, num_workers= cfg.train.dataloader.num_workers)
     # Train the model
-    training_costs, validation_costs = train(cfg.train,model, train_dataloader,valid_dataloader, wandb=wandb, inverse_transform_target = None)
+    training_costs, validation_costs = train(cfg.train,model, train_dataloader,valid_dataloader,valid_dataloader_20step, wandb=wandb, inverse_transform_target = None)
     
 
 if __name__ == '__main__':

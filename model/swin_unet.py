@@ -606,6 +606,7 @@ class SwinTransformerSys(nn.Module):
 
         # print("SwinTransformerSys expand initial----depths:{};depths_decoder:{};drop_path_rate:{};num_classes:{}".format(depths,
         # depths_decoder,drop_path_rate,num_classes))
+        self.in_seq_length = in_seq_length
         self.lat_dim = lat_dim
         self.lon_dim = lon_dim
         self.in_chans = in_seq_length * input_dim

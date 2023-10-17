@@ -1,7 +1,10 @@
 __pycache__
 *.pt
 wandb
+
 outputs
 *npy
 FourCastNet/
 checkpoint/
+
+*/test.ipynb
