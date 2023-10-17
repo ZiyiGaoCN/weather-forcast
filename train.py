@@ -13,6 +13,7 @@ import time
 import torch.nn.functional as F
 import tqdm
 import os
+import pandas as pd
 
 # Set plot_train_progress to True if you want a plot of the forecast after each epoch
 # plot_train_progress = False
@@ -80,6 +81,17 @@ def eval(output,target):
 def validate(train_param,model, validation_dataloader,wandb=None, inverse_transform_target=None, step=1):
     batch_loss = []
     batch_score = []
+
+    variables_names = ['z50', 'z100', 'z150', 'z200', 'z250', 'z300', 'z400', 'z500', 'z600', 'z700', 'z850', 'z925', 'z1000', 't50', 't100', 't150', 't200', 't250', 't300', 't400', 't500', 't600', 't700', 't850', 't925', 't1000', 'u50', 'u100', 'u150', 'u200', 'u250', 'u300', 'u400', 'u500', 'u600', 'u700', 'u850', 'u925', 'u1000', 'v50', 'v100', 'v150', 'v200', 'v250', 'v300', 'v400', 'v500', 'v600', 'v700', 'v850', 'v925', 'v1000', 'r50', 'r100', 'r150', 'r200', 'r250', 'r300', 'r400', 'r500', 'r600', 'r700', 'r850', 'r925', 'r1000', 't2m', 'u10', 'v10', 'msl', 'tp']
+
+    batch_loss_param = {
+
+    }
+    for v in variables_names:
+        batch_loss_param.setdefault(v,[])
+
+    batch_loss = []
+
     with torch.no_grad():
         model.eval()
         for i,(input,target) in enumerate(tqdm.tqdm(validation_dataloader)):
@@ -102,8 +114,12 @@ def validate(train_param,model, validation_dataloader,wandb=None, inverse_transf
                     input_ = torch.cat([input_[:, C_in:, :, :], tmp], dim=1)
                     
                 outputs = torch.cat(outputs, dim=1).to(train_param.device)
-            loss = F.mse_loss(input=outputs, target=target)
-            batch_loss.append(loss.item())
+            loss = F.mse_loss(input=outputs, target=target, reduction='none')
+
+            batch_loss.append(loss.mean().cpu().item())
+            for cid, name in enumerate(variables_names):
+                batch_loss_param[name].append(loss[:, cid, :, :].mean().cpu().item())
+            
             # Log the loss to wandb
             
             outputs =outputs.view(B, out_seq, C_out, H, W)
@@ -124,6 +140,10 @@ def validate(train_param,model, validation_dataloader,wandb=None, inverse_transf
         if step == 1:
             final_loss = np.mean(batch_loss)
             wandb.log({'val_loss': final_loss})
+            for name in variables_names:
+                batch_loss_param[name]= np.mean(batch_loss_param[name])
+            df = pd.DataFrame(batch_loss_param,index=[0],columns=variables_names)
+            wandb.log({"valid_table":wandb.Table(data=df)})
         
         if step==20:    
             final_score = {
@@ -195,8 +215,8 @@ def train(train_param, model, train_dataloader, validation_dataloader=None,valid
     model.to(train_param.device)
     model.train()
 
-    if valid_dataloader_20step:
-        valid_loss=validate(train_param,model, valid_dataloader_20step,wandb=wandb,inverse_transform_target=inverse_transform_target,step=20)
+    # if validation_dataloader:
+    #     valid_loss=validate(train_param,model, validation_dataloader,wandb=wandb,inverse_transform_target=inverse_transform_target,step=1)
         # validation_costs.append(valid_loss)
 
     # Training loop
@@ -256,8 +276,8 @@ def train(train_param, model, train_dataloader, validation_dataloader=None,valid
             valid_loss=validate(train_param,model, validation_dataloader,wandb=wandb,inverse_transform_target=inverse_transform_target)
             validation_costs.append(valid_loss)
 
-        if valid_dataloader_20step is not None and (epoch+1) % 5 == 0:
-            valid_loss=validate(train_param,model, valid_dataloader_20step,wandb=wandb,inverse_transform_target=inverse_transform_target,step=20)
+        # if valid_dataloader_20step is not None and (epoch+1) % 5 == 0:
+        #     valid_loss=validate(train_param,model, valid_dataloader_20step,wandb=wandb,inverse_transform_target=inverse_transform_target,step=20)
             
         # Print progress
         print("Average epoch training cost: ", epoch_cost)

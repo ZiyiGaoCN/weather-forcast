@@ -9,9 +9,9 @@ model:
     output_dim: 70
     lat_dim: 161
     lon_dim: 161 # now must be same as lat_dim    # above are input and output parameters
-    patch_size: 4
+    patch_size: 2
     hidden_dim: 192
-    window_size: 5
+    window_size: 10
 
 
 data: 
@@ -27,7 +27,7 @@ train:
     name: Adam
     learning_rate: 0.00001
     weight_decay: 1e-5
-  n_epochs: 100  
+  n_epochs: 200  
   ckpt_dir: checkpoint
   device: cuda:1
   autoregressive: True
