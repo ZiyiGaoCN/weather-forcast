@@ -12,7 +12,6 @@ year_len = (np.array([ 366 if i%4 == 0  else 365  for i in range(2007, 2018)]) )
 year_cum = np.cumsum(year_len)
 year_dic = { i + 1: year_cum[i-2007]  for i in range(2007, 2018)}
 year_dic[2007] = 0
-# year_dic the start id of one year 
 
 class WeatherDataet_npy(Dataset):
 
@@ -86,13 +85,13 @@ class WeatherDataet_differentdata(Dataset):
         # output target is (end - start) - (target_step -1)
          
 
-        if autoregressive, the output channel is 70, otherwise only 5
+        if autoregressive, the output channel is 70, otherwise only last 5
         """
 
         
         self.target = target_data
         if input_data1 is  None:
-            self.input1 = self.target
+            self.input1 = self.input2 = self.target
         else:
             self.input1 = input_data1
             if input_data2 is  None:
@@ -155,37 +154,47 @@ class WeatherDataet_differentdata(Dataset):
             input = self.transform(input)
         return input, target
 
+def get_range(year_range = (2007,2009)):
+    year_len = (np.array([ 366 if i%4 == 0  else 365  for i in range(2007, 2018)]) )*4  # 2007 - 2017
+    year_cum = np.cumsum(year_len)
+    year_dic = { i + 1: year_cum[i-2007]  for i in range(2007, 2018)}
+    year_dic[2007] = 0
+    # year_dic the start id of one year 
+    return (year_dic[year_range[0]] + 2, year_dic[year_range[1]])
         
-def split_dataset_npy(data_path , npy_name, transform = None, target_transform=None, autoregressive = False,preload_to_memory = False,train_range=(2007,2016), val_range=(2016,2017),**kwargs):
-    npy_path = os.path.join(data_path, npy_name)
-    if not os.path.exists(npy_path):
-        # raise
-        print('convert xarray data to npy')
-        data = np.memmap(npy_path, dtype = 'float32',mode = 'w+', shape = (14612, 70, 161, 161) , order = 'C')
-        time_accumulate = 0
-        year_dic[2007]=0
-        for q in range(2007, 2017):
-            a = load_dataset(data_path, q, q+ 1).x
-            data[time_accumulate: time_accumulate + len(a.time.values), :, :, :] = a.values
-            time_accumulate += len(a.time.values)
-            year_dic[q+1]= time_accumulate
-        data.flush()
-    else:
-        data = np.memmap(npy_path, dtype = 'float32',mode = 'c', shape = (14612, 70, 161, 161) , order = 'C') 
-    
+def split_dataset_npy(data_path , npy_name, autoregressive = False,preload_to_memory = False,train_range=(2007,2016), val_range=(2016,2017), npy_len = (-1, -1, -1), **kwargs):
+
+    data = {}
+    for i in range(3):
+        if  npy_name[i] is not None:
+            file = os.path.join(data_path, npy_name[i])
+            if not os.path.exists(file):
+                raise Exception(f"Please put your npy file at {file}")
+            else:
+                data[i] = np.memmap(file, dtype = 'float32',mode = 'c', shape = (npy_len[i], 70, 161, 161) , order = 'C') 
+        else:
+            data[i] = None
     # if preload_to_memory:
     #     data = np.array(data)
-    train = WeatherDataet_npy(data, train_range, transform , target_transform , autoregressive , preload= preload_to_memory)
-    valid = WeatherDataet_npy(data, val_range, transform , target_transform , autoregressive, preload= preload_to_memory )
-    valid_20step = WeatherDataet_npy(data, val_range, transform , target_transform , autoregressive = False, preload= preload_to_memory )
-    return train, valid , valid_20step
+    # train = WeatherDataet_npy(data, train_range, autoregressive=autoregressive , preload= preload_to_memory)
+    # valid = WeatherDataet_npy(data, val_range, autoregressive=autoregressive, preload= preload_to_memory )
+    # valid_20step = WeatherDataet_npy(data, val_range, autoregressive=autoregressive = False, preload= preload_to_memory )
+    train_range_stamp = get_range(train_range)
+    val_range_stamp = get_range(val_range)
+    train = WeatherDataet_differentdata(data[0], data[1], data[2], autoregressive= autoregressive, preload=preload_to_memory, range= train_range_stamp, )
+    valid = WeatherDataet_differentdata(data[0], data[1], data[2], autoregressive= autoregressive, preload=preload_to_memory, range= val_range_stamp, )
+    return train, valid , 
+    # valid_20step
 
 
 if __name__ == '__main__':
-    a1 = np.ones((10, 7, 5, 5))
-    a2 = np.ones((8, 7, 5, 5))
-    a3 = np.ones((12, 7, 5, 5))
+    # a1 = np.ones((10, 7, 5, 5))
+    # a2 = np.ones((8, 7, 5, 5))
+    # a3 = np.ones((12, 7, 5, 5))
 
-    data = WeatherDataet_differentdata(a3, a1, a2)
-    print(data[0][0].shape,data[0][1].shape)
+    # data = WeatherDataet_differentdata(a3, a1, a2)
+    # print(data[0][0].shape,data[0][1].shape)
+
+    # a, b = split_dataset_npy('.', npy_name= ('data_correct.npy', None, None), autoregressive= True, train_range=(2007,2008), val_range=(2008, 2009), npy_len= (7304, -1,-1))
+    pass
 
