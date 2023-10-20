@@ -12,9 +12,10 @@ import hydra
 import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf , open_dict
+import yaml
 import importlib
 
-from train import train
+from train_deepspeed import train
 from evaluate import evaluate
 from dataHelpers import generate_data
 from dataset.loading import loading
@@ -36,7 +37,7 @@ def set_seed(seed_value = 0):
         torch.cuda.manual_seed_all(seed_value)
     np.random.seed(seed_value)
 
-@hydra.main(version_base=None, config_path='./cfgs', config_name="swin_AR")
+# @hydra.main(version_base=None, config_path='./cfgs', config_name="swin_AR_deepspeed")
 def main(cfg:DictConfig):
 
     set_seed(cfg.seed)
@@ -44,10 +45,11 @@ def main(cfg:DictConfig):
     # using now() to get current time
     current_time = datetime.datetime.now()
     with open_dict(cfg):
-        cfg.train.save_file = f'./{cfg.train.ckpt_dir}/{current_time.strftime("%Y-%m-%d-%H-%M-%S")}'
-    if not os.path.exists(cfg.train.save_file):
+        cfg.train.save_file = f'{cfg.train.ckpt_dir}/{current_time.strftime("%Y-%m-%d-%H")}'
+    try:
         os.mkdir(cfg.train.save_file)
-    
+    except:
+        pass
     print(cfg)
     
     # Initialize model 
@@ -57,7 +59,7 @@ def main(cfg:DictConfig):
     model_class = getattr(model_module, model_type)
     model = model_class(**cfg.model.param)
 
-    if hasattr(cfg,'logger'):
+    if hasattr(cfg,'logger') and cfg.deepspeed.local_rank == 0:
         config = OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=True
         )
@@ -65,18 +67,28 @@ def main(cfg:DictConfig):
             project=cfg.logger.project,
             name=cfg.logger.name,
             config=config)
-
-    # transform_train = Normalize('../dataset/normalization', normalization_type = 'TAO', is_target = False)
-    # transform_target = Normalize('../dataset/normalization',  normalization_type = 'TAO', is_target = True)
-    # inverse_transform_target = InverseNormalize('../dataset/normalization',  normalization_type = 'TAO', is_target = True)
+        
+        # wandb.config.update(cfg)
 
     train_data, valid_data, valid_data_20step = split_dataset_npy(**cfg.data, autoregressive=cfg.train.autoregressive,transform=None, target_transform=None)
-    train_dataloader = DataLoader(train_data, shuffle=True,**cfg.train.dataloader)
-    valid_dataloader = DataLoader(valid_data, shuffle=False,**cfg.train.dataloader)
-    valid_dataloader_20step = DataLoader(valid_data_20step, shuffle=False, **cfg.train.dataloader)
-    # Train the model
-    training_costs, validation_costs = train(cfg.train,model, train_dataloader,valid_dataloader,valid_dataloader_20step, wandb=wandb, inverse_transform_target = None)
+    training_costs, validation_costs = train(cfg.train,model, train_data,valid_data,valid_data_20step, wandb=wandb, inverse_transform_target = None,
+                                             deepspeed_config=cfg.deepspeed)
     
+import argparse
 
 if __name__ == '__main__':
-    main()
+    
+    parser = argparse.ArgumentParser(description="hello")
+    parser.add_argument('--local_rank', default=-1, type=int, help='node rank for distributed training')
+    args = parser.parse_args()
+    
+    cfg_path = './cfgs/swin_AR_deepspeed.yaml'
+
+    with open(cfg_path, 'r') as file:
+        yaml_data = yaml.safe_load(file)
+
+    # Convert to omegaconf.DictConfig
+    config = OmegaConf.create(yaml_data)
+    config_deepspeed = OmegaConf.create({"deepspeed":vars(args)})
+    config = OmegaConf.merge(config, config_deepspeed)
+    main(config)

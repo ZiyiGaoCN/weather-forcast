@@ -26,24 +26,6 @@ def main(cfg):
     model.eval()
     model.cuda()
     
-    # test_data = test_dataset()
-    # print(test_data.shape)
-    # test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=cfg.data.batch_size_val, shuffle=False, num_workers=2)
-    
-    # with torch.no_grad():
-    #     for i, data in enumerate(test_dataloader):
-    #         data = data.cuda()
-    #         print(data.shape)
-    #         # data = data.unsqueeze(0)
-    #         B, seq_in, C, H, W = data.shape
-    #         data = data.view(B,seq_in*C, H, W)
-    #         output = model(data)
-    #         print(output.shape)
-
-    #         output = model(data)
-    #         target = output.view(B, 20, 5, H, W).cpu().detach()
-    #         # save target to pt
-    #         for j in range(target.shape[0]):
     batch_size = 20
     for i in range(700//batch_size):
         datas = []
@@ -57,8 +39,18 @@ def main(cfg):
         input = torch.cat(datas, axis=0).cuda()
         B, seq_in, C, H, W = input.shape
         input = input.view(B,seq_in*C, H, W)
-        output = model(input.cuda())
-        output = output.view(B, 20, 5, H, W).cpu().detach()
+        
+        outputs = []
+
+        for j in range(20):
+            checkpoint  = torch.load(f'./finetune_cpkt/save_{j}.pt')
+            model.load_state_dict(checkpoint['model_state_dict'])
+            model.to(device)
+            output = model(input)
+            outputs.append(output[:,-5:,...].detach().cpu())
+            input_ = torch.cat([input[:,-70:,...],output] , dim=1)
+            input = input_
+        output = torch.cat(outputs,dim=1)
         for j in range(output.shape[0]):
             str_id = str(i*batch_size+j).zfill(3)
             s = output[j,:,:,:].clone()
