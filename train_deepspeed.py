@@ -237,7 +237,7 @@ def train(train_param, model, train_set, valid_set=None,valid_set_20step=None,wa
             if step % train_param.validate_step == 0:
                 
                 client_sd['step'] = step
-                ckpt_id = loss.item()
+                ckpt_id = f'step_{step}loss_{loss.item()}'
                 model_engine.save_checkpoint(train_param.save_file, ckpt_id)
 
 

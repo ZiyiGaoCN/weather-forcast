@@ -12,6 +12,7 @@ model:
     patch_size: 2
     hidden_dim: 384
     window_size: 10
+    ape: True
 
 
 data: 
