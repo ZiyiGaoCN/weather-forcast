@@ -36,36 +36,29 @@ def main(cfg):
         checkpoint = torch.load(f'./checkpoint/save_{step}.pt',map_location="cpu")
         model.load_state_dict(checkpoint['model_state_dict'])
         model.cuda()
-        for i in range(length//batch_size):
-            datas = []
-            # for j in range(batch_size):
-            #     id = i*batch_size+j
-            #     str_id = str(id).zfill(3)
+        with torch.no_grad():
+            for i in range(length//batch_size):
+                input = np.array(data1[i*batch_size:(i+1)*batch_size,:,:,:,:])
+                input = torch.from_numpy(input).cuda()
+
+                B, seq_in, C, H, W = input.shape
+                input = input.view(B,seq_in*C, H, W)
                 
-            #     input = torch.load(f'/tcdata/input/{str_id}.pt')
-            #     datas += [input.unsqueeze(0)]
-                # s = target[j,:,:,:].clone()
-            input = np.array(data1[i*batch_size:(i+1)*batch_size,:,:,:,:])
-            input = torch.from_numpy(input).cuda()
+                output = model(input)
+                output = output.view(B,70,H,W).detach().cpu().numpy()
+                input = input.detach().cpu().numpy().reshape(B,seq_in,C,H,W)
+                
+                answer[i*batch_size:(i+1)*batch_size,step-1,:,:,:] = output[:,65:70,:,:]
 
-            B, seq_in, C, H, W = input.shape
-            input = input.view(B,seq_in*C, H, W)
-            
-            output = model(input)
-            output = output.view(B,70,H,W).detach().cpu().numpy()
-            input = input.detach().cpu().numpy().reshape(B,seq_in,C,H,W)
-            
-            answer[i*batch_size:(i+1)*batch_size,step-1,:,:,:] = output[:,65:70,:,:]
+                output = output.reshape(B,1,70,H,W)
 
-            output = output.reshape(B,1,70,H,W)
-
-            new_input = np.concatenate([input[:,1:,:,:,:],output],axis=1)        
-            data2[i*batch_size:(i+1)*batch_size,:,:,:,:] = new_input
+                new_input = np.concatenate([input[:,1:,:,:,:],output],axis=1)        
+                data2[i*batch_size:(i+1)*batch_size,:,:,:,:] = new_input
         data1, data2 = data2, data1
             
     for i in range(length):
         str_id = str(i).zfill(3)
-        s = output[i,:,:,:].clone()
+        s = torch.from_numpy(np.array(answer[i,:,:,:,:])).clone()
         torch.save(s, f'output/{str_id}.pt')    
     import os 
     os.system('zip -r output.zip output')
