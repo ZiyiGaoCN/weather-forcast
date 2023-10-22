@@ -22,7 +22,6 @@ import xarray as xr
 import numpy as np
 import time
 
-import cartopy.crs as ccrs
 import matplotlib.pyplot as plt 
 # import matplotlib.patches as patches
 

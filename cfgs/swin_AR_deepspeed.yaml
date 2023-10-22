@@ -12,12 +12,14 @@ model:
     patch_size: 2
     hidden_dim: 384
     window_size: 10
+    drop_rate: 0.3
+    attn_drop_rate: 0.3
     ape: True
 
 
 data: 
-  data_path : /local_ssd/gaoziyi/dataset
-  npy_name: /local_ssd/gaoziyi/dataset/dataset.npy
+  data_path : /dev/shm/store/checkpoint/original_dataset
+  npy_name: /dev/shm/store/checkpoint/original_dataset/dataset.npy
   preload_to_memory: False
   augment: False
   train_range: [2007,2016]
@@ -33,19 +35,19 @@ train:
       hidden_dim: 192
       warmup_steps: 1000
   n_epochs: 200  
-  ckpt_dir: /local_ssd/gaoziyi/deepspeed_checkpoint
+  ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint/dropout0.3attention_0.3
   device: cuda:0
   autoregressive: True
-  validate_step : 100
+  validate_step : 500
   restore_session:
     yes: False
     load_dir: checkpoint
     ckpt_id: 200
 
   dataloader:
-    num_workers: 8
+    num_workers: 32
     batch_size: 64
-    prefetch_factor: 16
+    prefetch_factor: 32
 
   deepspeed_config: ./cfgs/deepspeed.json
 

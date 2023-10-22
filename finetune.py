@@ -39,7 +39,7 @@ def set_seed(seed_value = 0):
         torch.cuda.manual_seed_all(seed_value)
     np.random.seed(seed_value)
 
-@hydra.main(version_base=None, config_path='./cfgs/finetune', config_name="finetune")
+@hydra.main(version_base=None, config_path='./cfgs/finetune', config_name="finetune2")
 def main(cfg:DictConfig):
 
     set_seed(cfg.seed)
@@ -83,7 +83,7 @@ def main(cfg:DictConfig):
         preload=False,range=(13148,14612))
 
     for i in range(1,20):
-        checkpoint = torch.load(os.path.join(cfg.finetune.checkpoint_dir,f'save_{i}.pt'))
+        checkpoint = torch.load(os.path.join(cfg.finetune.checkpoint_dir,f'save_{i}.pt'),map_location=torch.device('cpu'))
         model.load_state_dict(checkpoint['model_state_dict'])
         
         output_path = os.path.join(cfg.finetune.generated_dir,f'dataset_{i}.npy')
@@ -91,7 +91,7 @@ def main(cfg:DictConfig):
         Construct_Dataset(model, dataloader=DataLoader(dataset, batch_size=64,shuffle=False, num_workers= 8, prefetch_factor=8),
                             data=raw_data, device=cfg.train.device,start = i + 1)
         Construct_Dataset(model, dataloader=DataLoader(valid, batch_size=64,shuffle=False, num_workers= 8, prefetch_factor=8),
-                            data=raw_data, device=cfg.train.device,start = i + 1)
+                            data=raw_data, device=cfg.train.device,start = 13148 + i + 1)
         
         model = model.to('cpu')
 
@@ -112,12 +112,14 @@ def main(cfg:DictConfig):
             loss = np.mean((input - target)**2,axis=(1,2))
             losses.append(loss)
         print(np.mean(losses,axis=0))
-        table = wandb.Table(data=losses, columns = [f'loss_{i}' for i in range(5)])
+        loss = np.mean(losses,axis=0)
+        
+        table = wandb.Table(data=[loss], columns = [f'loss_{i}' for i in range(5)])
         logger.log({"val_losses": table})
         
 
 
-        train(cfg.train, model, DataLoader(dataset, batch_size=64,shuffle=True, num_workers= 8, prefetch_factor=8)
+        train(cfg.train, model, DataLoader(dataset, batch_size=cfg.train.dataloder.batch_size,shuffle=True, num_workers= 16, prefetch_factor=16)
               ,None,None, wandb=logger, inverse_transform_target = None)
         
         torch.save({

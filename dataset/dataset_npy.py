@@ -1,18 +1,40 @@
 import os
 import numpy as np
 import time
-
-
+import xarray as xr
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-# from . import load_dataset
+# from dataset_mem import load_dataset
 
 year_len = (np.array([ 366 if i%4 == 0  else 365  for i in range(2007, 2018)]) )*4  # 2007 - 2017
 year_cum = np.cumsum(year_len)
 year_dic = { i + 1: year_cum[i-2007]  for i in range(2007, 2018)}
 year_dic[2007] = 0
 # year_dic the start id of one year 
+
+def chunk_time(ds):
+    dims = {k:v for k, v in ds.dims.items()}
+    dims['time'] = 1
+    print(f'chunking dims: {dims}')
+    ds = ds.chunk(dims)
+    return ds
+
+def load_dataset(data_dir, from_year, to_year):
+    """from_year: included, to_year: excluded"""
+    ds = []
+    for y in range(from_year,to_year):
+        data_name = os.path.join(data_dir, f'weather_round_train_{y}')
+        # print(f'loading {data_name}')
+        x = xr.open_zarr(data_name, consolidated=True)
+        # print(x.time.values[0:9])
+        print(f'{data_name}, {x.time.values[0]} ~ {x.time.values[-1]}')
+        # ds.append(x)
+        return x
+    # ds = xr.concat(ds, 'time')
+    # ds = chunk_time(ds)
+    return ds
+
 
 class WeatherDataet_npy(Dataset):
 
@@ -181,10 +203,5 @@ def split_dataset_npy(data_path , npy_name, transform = None, target_transform=N
 
 
 if __name__ == '__main__':
-    a1 = np.ones((10, 7, 5, 5))
-    a2 = np.ones((8, 7, 5, 5))
-    a3 = np.ones((12, 7, 5, 5))
-
-    data = WeatherDataet_differentdata(a3, a1, a2)
-    print(data[0][0].shape,data[0][1].shape)
+    split_dataset_npy('/home/gaoziyi/weather/dataset','/dev/shm/store/checkpoint/original_dataset/dataset.npy')
 

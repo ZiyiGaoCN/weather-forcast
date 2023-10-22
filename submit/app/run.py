@@ -3,58 +3,70 @@ import hydra
 import torch
 import numpy as np
 import shutil
-
-# def test_dataset():
-
-#     data_path = '/tcdata/input'
-#     # data_path= '/localdata_ssd/gaoziyi/dataset_old/weather_round1_test/input'
-#     datas = []
-#     for i in range(300):
-#         str_i = str(i).zfill(3)
-#         data_i = torch.load(f'{data_path}/{str_i}.pt')
-#         datas.append(data_i.unsqueeze(0))
-#     data = torch.concat(datas, axis=0)
-#     # data_torch = torch.from_numpy(data).float()
-#     return data
+import os
 
 @hydra.main(version_base=None, config_path='./', config_name="swin_transformer")
 def main(cfg):
     model = SwinTransformerSys(**cfg.model.param)
-    state_dict = torch.load('./save.pt',map_location=cfg.train.device)
-    model.load_state_dict(state_dict['model_state_dict'])
+    # state_dict = torch.load('./save.pt',map_location=cfg.train.device)
+    # model.load_state_dict(state_dict['model_state_dict'])
     # print(model.keys())
     model.eval()
-    model.cuda()
+    # model.cuda()
     
-    batch_size = 20
-    for i in range(700//batch_size):
-        datas = []
-        for j in range(batch_size):
-            id = i*batch_size+j
-            str_id = str(id).zfill(3)
-            
-            input = torch.load(f'/tcdata/input/{str_id}.pt')
-            datas += [input.unsqueeze(0)]
-            # s = target[j,:,:,:].clone()
-        input = torch.cat(datas, axis=0).cuda()
-        B, seq_in, C, H, W = input.shape
-        input = input.view(B,seq_in*C, H, W)
-        
-        outputs = []
+    length = 700
 
-        for j in range(20):
-            checkpoint  = torch.load(f'./finetune_cpkt/save_{j}.pt')
-            model.load_state_dict(checkpoint['model_state_dict'])
-            model.to(device)
+    batch_size = 20
+
+
+    # os.makedirs('/app/data',exist_ok=True)
+
+    data1 = np.memmap('/app/a.npy', dtype='float32', mode='w+', shape=(length,2,70,161,161))
+    data2 = np.memmap('/app/b.npy', dtype='float32', mode='w+', shape=(length,2,70,161,161))
+    answer = np.memmap('/app/answer.npy', dtype='float32', mode='w+', shape=(length,20,5,161,161))
+
+    for i in range(length):
+        str_id = str(i).zfill(3)
+        data = torch.load(f'/tcdata/input/{str_id}.pt')
+        data1[i,:,:,:,:] = data[:,:,:,:].numpy()
+
+
+
+    for step in range(1,21):
+        checkpoint = torch.load(f'./checkpoint/save_{step}.pt',map_location="cpu")
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.cuda()
+        for i in range(length//batch_size):
+            datas = []
+            # for j in range(batch_size):
+            #     id = i*batch_size+j
+            #     str_id = str(id).zfill(3)
+                
+            #     input = torch.load(f'/tcdata/input/{str_id}.pt')
+            #     datas += [input.unsqueeze(0)]
+                # s = target[j,:,:,:].clone()
+            input = np.array(data1[i*batch_size:(i+1)*batch_size,:,:,:,:])
+            input = torch.from_numpy(input).cuda()
+
+            B, seq_in, C, H, W = input.shape
+            input = input.view(B,seq_in*C, H, W)
+            
             output = model(input)
-            outputs.append(output[:,-5:,...].detach().cpu())
-            input_ = torch.cat([input[:,-70:,...],output] , dim=1)
-            input = input_
-        output = torch.cat(outputs,dim=1)
-        for j in range(output.shape[0]):
-            str_id = str(i*batch_size+j).zfill(3)
-            s = output[j,:,:,:].clone()
-            torch.save(s, f'output/{str_id}.pt')    
+            output = output.view(B,70,H,W).detach().cpu().numpy()
+            input = input.detach().cpu().numpy().reshape(B,seq_in,C,H,W)
+            
+            answer[i*batch_size:(i+1)*batch_size,step-1,:,:,:] = output[:,65:70,:,:]
+
+            output = output.reshape(B,1,70,H,W)
+
+            new_input = np.concatenate([input[:,1:,:,:,:],output],axis=1)        
+            data2[i*batch_size:(i+1)*batch_size,:,:,:,:] = new_input
+        data1, data2 = data2, data1
+            
+    for i in range(length):
+        str_id = str(i).zfill(3)
+        s = output[i,:,:,:].clone()
+        torch.save(s, f'output/{str_id}.pt')    
     import os 
     os.system('zip -r output.zip output')
 
