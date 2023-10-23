@@ -234,7 +234,7 @@ def train(train_param, model, train_set, valid_set=None,valid_set_20step=None,wa
                 wandb.log({'loss': loss.item()})
                 wandb.log({'lr': optimizer.param_groups[0]['lr']})
             
-            if step % train_param.validate_step == 0:
+            if hasattr(train_param,'validate_step') and step % train_param.validate_step == 0 and hasattr(train_param,'save_file'):
                 
                 client_sd['step'] = step
                 ckpt_id = f'step_{step}loss_{loss.item()}'
@@ -261,6 +261,11 @@ def train(train_param, model, train_set, valid_set=None,valid_set_20step=None,wa
 
         # Save a model checkpoint
         best_result = False
-        
+    client_sd = {
+        "step":step
+    }
+    ckpt_id = f'hello'
+    path ='/dev/shm/store/checkpoint/checkpoint/latest'
+    model_engine.save_checkpoint(path, ckpt_id)        
 
-    return training_costs, validation_costs
+    return model_engine
