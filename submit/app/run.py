@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import shutil
 import os
+import tqdm
 
 @hydra.main(version_base=None, config_path='./', config_name="swin_transformer")
 def main(cfg):
@@ -16,7 +17,7 @@ def main(cfg):
     
     length = 700
 
-    batch_size = 20
+    batch_size = 7
 
 
     # os.makedirs('/app/data',exist_ok=True)
@@ -28,6 +29,7 @@ def main(cfg):
     for i in range(length):
         str_id = str(i).zfill(3)
         data = torch.load(f'/tcdata/input/{str_id}.pt')
+        # data = torch.randn((2,70,161,161))
         data1[i,:,:,:,:] = data[:,:,:,:].numpy()
 
 
@@ -36,8 +38,9 @@ def main(cfg):
         checkpoint = torch.load(f'./checkpoint/save_{step}.pt',map_location="cpu")
         model.load_state_dict(checkpoint['model_state_dict'])
         model.cuda()
+        model.eval()
         with torch.no_grad():
-            for i in range(length//batch_size):
+            for i in tqdm.tqdm(range(length//batch_size)):
                 input = np.array(data1[i*batch_size:(i+1)*batch_size,:,:,:,:])
                 input = torch.from_numpy(input).cuda()
 

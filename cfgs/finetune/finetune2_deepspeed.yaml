@@ -13,7 +13,8 @@ model:
     hidden_dim: 384
     window_size: 10
     ape: True
-    drop_rate : 0.3
+    # drop_rate : 0.5
+    # attn_drop_rate : 0.5
     
 
 data: 
@@ -28,27 +29,28 @@ data:
 
 finetune: 
   # original_dir: ../dataset
-  generated_dir: /dev/shm/store/checkpoint/dataset
-  checkpoint_dir: /dev/shm/store/checkpoint/checkpoint
+  generated_dir: /dev/shm/store/checkpoint/dataset_2
+  checkpoint_dir: /dev/shm/store/checkpoint/checkpoint_2
 
 train:   
   optimizer:
     name: Adam
-    learning_rate: 0.1
+    learning_rate: 0.1  
     weight_decay: 1e-5
     scheduler: 
       name: NoamLR
       hidden_dim: 192
-      warmup_steps: 200
-  n_epochs: 4  
+      warmup_steps: 100
+  n_epochs: 6
   ckpt_dir: checkpoint
   device: cuda:6
   autoregressive: True
 
   dataloader:
-    num_workers: 32
-    batch_size: 24
-    prefetch_factor: 32
+    num_workers: 16
+    batch_size: 96
+    prefetch_factor: 16
+  deepspeed_config: ./cfgs/deepspeed_finetune.json
 
 logger: #default wandb
    project: weather-finetune

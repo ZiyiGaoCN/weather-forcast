@@ -6,6 +6,7 @@ import hydra
 import importlib
 import torch.nn.functional as F
 import tqdm
+import os
 @hydra.main(version_base=None, config_path='./cfgs/validate', config_name="validate")
 def main(cfg):
     
@@ -65,42 +66,43 @@ def main(cfg):
         batch_size = 64
         Loss_sum = []
         for step in range(1,21):
-            checkpoint = torch.load(f'submit/app/checkpoint/save_{step}.pt',map_location="cpu")
+            checkpoint = torch.load(os.path.join(cfg.validate.checkpoint,f'save_{step}.pt'),map_location="cpu")
             model.load_state_dict(checkpoint['model_state_dict'])
             model.to(device)
             losses = []
-            for i in tqdm.tqdm(range(length//batch_size)):
-                # for j in range(batch_size):
-                #     id = i*batch_size+j
-                #     str_id = str(id).zfill(3)
+            with torch.no_grad():
+                for i in tqdm.tqdm(range(length//batch_size)):
+                    # for j in range(batch_size):
+                    #     id = i*batch_size+j
+                    #     str_id = str(id).zfill(3)
+                        
+                    #     input = torch.load(f'/tcdata/input/{str_id}.pt')
+                    #     datas += [input.unsqueeze(0)]
+                        # s = target[j,:,:,:].clone()
+                    input = np.array(data1[i*batch_size:(i+1)*batch_size,:,:,:,:])
+                    input = torch.from_numpy(input).to(device)
+
+                    B, seq_in, C, H, W = input.shape
+                    input = input.view(B,seq_in*C, H, W)
                     
-                #     input = torch.load(f'/tcdata/input/{str_id}.pt')
-                #     datas += [input.unsqueeze(0)]
-                    # s = target[j,:,:,:].clone()
-                input = np.array(data1[i*batch_size:(i+1)*batch_size,:,:,:,:])
-                input = torch.from_numpy(input).to(device)
+                    output = model(input)
+                    output = output.view(B,70,H,W).detach().cpu().numpy()
+                    input = input.detach().cpu().numpy().reshape(B,seq_in,C,H,W)
+                    
+                    answer[i*batch_size:(i+1)*batch_size,step-1,:,:,:] = output[:,65:70,:,:]
+                    
+                    tar = torch.from_numpy(np.array(target[i*batch_size:(i+1)*batch_size,step-1,:,:,:]))
+                    loss = F.mse_loss(torch.from_numpy(output[:,65:70,:,:]),tar,reduction='none').mean(dim=(0,2,3))
+                    losses.append(loss)
 
-                B, seq_in, C, H, W = input.shape
-                input = input.view(B,seq_in*C, H, W)
-                
-                output = model(input)
-                output = output.view(B,70,H,W).detach().cpu().numpy()
-                input = input.detach().cpu().numpy().reshape(B,seq_in,C,H,W)
-                
-                answer[i*batch_size:(i+1)*batch_size,step-1,:,:,:] = output[:,65:70,:,:]
-                
-                tar = torch.from_numpy(np.array(target[i*batch_size:(i+1)*batch_size,step-1,:,:,:]))
-                loss = F.mse_loss(torch.from_numpy(output[:,65:70,:,:]),tar,reduction='none').mean(dim=(0,2,3))
-                losses.append(loss)
+                    output = output.reshape(B,1,70,H,W)
 
-                output = output.reshape(B,1,70,H,W)
-
-                new_input = np.concatenate([input[:,1:,:,:,:],output],axis=1)        
-                data2[i*batch_size:(i+1)*batch_size,:,:,:,:] = new_input
-            data1, data2 = data2, data1
-            losses = np.mean(losses,axis=0)
-            print(losses)
-            Loss_sum.append(losses)
+                    new_input = np.concatenate([input[:,1:,:,:,:],output],axis=1)        
+                    data2[i*batch_size:(i+1)*batch_size,:,:,:,:] = new_input
+                data1, data2 = data2, data1
+                losses = np.mean(losses,axis=0)
+                print(losses)
+                Loss_sum.append(losses)
         print(np.mean(Loss_sum,axis=0))
         # for i in range(length//batch_size):
         #     ans = np.array(answer[i*batch_size:(i+1)*batch_size,:,:,:,:])

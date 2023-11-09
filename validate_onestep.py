@@ -25,7 +25,7 @@ def main(cfg):
         dataloader = DataLoader(valid_20step, batch_size=64, shuffle=False, num_workers=8)
     else :
         valid = WeatherDataet_npy(data, (2016,2017), None,None , autoregressive= True, preload= False)
-        dataloader = DataLoader(valid, batch_size=64, shuffle=False, num_workers=8)
+        dataloader = DataLoader(valid, batch_size=7, shuffle=False, num_workers=8)
     
      
 
@@ -37,16 +37,17 @@ def main(cfg):
         checkpoint =torch.load(cfg.validate.checkpoint,map_location='cpu')
         model.load_state_dict(checkpoint['module'])
         model = model.to(device)
-        with torch.no_grad():
-            for i,(input,target) in tqdm.tqdm(enumerate(dataloader)):
-                outputs = []
-                input = input.reshape(-1,140,161,161)
-                input = input.to(device)
-                output = model(input).detach().cpu()
-                target = target.reshape(-1,70,161,161)
-                valid_loss = F.mse_loss(output,target,reduction='none')
-                sum_up.append(valid_loss.mean())
-                losses.append(valid_loss.mean(dim=(0,2,3)))
+        model.eval()
+        # with torch.no_grad():
+        for i,(input,target) in tqdm.tqdm(enumerate(dataloader)):
+            outputs = []
+            input = input.reshape(-1,140,161,161)
+            input = input.to(device)
+            output = model(input).detach().cpu()
+            target = target.reshape(-1,70,161,161)
+            valid_loss = F.mse_loss(output,target,reduction='none')
+            sum_up.append(valid_loss.mean())
+            losses.append(valid_loss.mean(dim=(0,2,3)))
         print(np.mean(sum_up))        
         print(np.mean(losses,axis=0)[65:70])
     else:

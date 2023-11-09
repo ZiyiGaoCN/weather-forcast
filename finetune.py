@@ -119,7 +119,7 @@ def main(cfg:DictConfig):
         
 
 
-        train(cfg.train, model, DataLoader(dataset, batch_size=cfg.train.dataloder.batch_size,shuffle=True, num_workers= 16, prefetch_factor=16)
+        train(cfg.train, model, DataLoader(dataset, batch_size=cfg.train.dataloader.batch_size,shuffle=True, num_workers= 16, prefetch_factor=16)
               ,None,None, wandb=logger, inverse_transform_target = None)
         
         torch.save({
