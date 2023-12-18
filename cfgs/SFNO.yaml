@@ -1,22 +1,20 @@
 model:
-  model_path: model.swin_unet #'dense' or 'conv', 'dense2' or 'conv2'
-  model_type: SwinTransformerSys
+  model_path: torch_harmonics.examples.sfno #'dense' or 'conv', 'dense2' or 'conv2'
+  model_type: SphericalFourierNeuralOperatorNet
   param: 
-    param: 
-    in_seq_length: 1
-    out_seq_length: 1
-    input_dim: 68
-    output_dim: 68
-    lat_dim: 32
-    lon_dim: 64 # above are input and output parameters
-    patch_size: 2
-    hidden_dim: 384
-    window_size: 4
-    drop_rate: 0.3
-    attn_drop_rate: 0.3
-    ape: True
-    uncertainty_loss: True
-
+    spectral_transform: sht 
+    operator_type: driscoll-healy
+    img_size: [32, 64]
+    grid: "equiangular"
+    num_layers: 8
+    scale_factor: 1
+    embed_dim: 768
+    big_skip: True
+    pos_embed: "lat"
+    use_mlp: False
+    normalization_layer: none
+    in_chans: 68
+    out_chans: 68
 
 data: 
   data_path : /dev/shm/store/checkpoint/original_dataset
@@ -61,10 +59,14 @@ train:
 
 logger: #default wandb
     project: weather-forecast-deepspeed
-    name: swin-run-384-patch2-uncertainty_loss
+    name: SFNO-layernorm-downsample1
 
 seed: 114514
 
 hydra:
   run:
     dir: null
+
+    
+
+# from torch_harmonics.examples.sfno import SphericalFourierNeuralOperatorNet as SFNO

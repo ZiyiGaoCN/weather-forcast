@@ -1,21 +1,34 @@
 model:
-  model_path: model.swin_unet #'dense' or 'conv', 'dense2' or 'conv2'
-  model_type: SwinTransformerSys
+  model_path: model.swin_unet_multivariable #'dense' or 'conv', 'dense2' or 'conv2'
+  model_type: Model
   param: 
-    param: 
-    in_seq_length: 1
-    out_seq_length: 1
-    input_dim: 68
-    output_dim: 68
     lat_dim: 32
     lon_dim: 64 # above are input and output parameters
-    patch_size: 2
-    hidden_dim: 384
-    window_size: 4
-    drop_rate: 0.3
-    attn_drop_rate: 0.3
+    hidden_dim: 96
     ape: True
+    patch_size: [1,1,1]
+    fusion_layers: [12,12,12]
+    fusion_window_size: [4,8,6]
+    fusion_hidden_size: [96,192,384]
+    # fusion_hidden_size: [768,1536,3072]
+    time_embed: True
+    variable_dict:
+      temperature: 13
+      v_component_of_wind: 13
+      specific_humidity: 13
+      geopotential: 13
+      u_component_of_wind: 13
+      surface_variable: 3
+    variable_down: [68,43,28]
+    variable_order:
+      - temperature
+      - v_component_of_wind
+      - specific_humidity
+      - geopotential
+      - u_component_of_wind
+      - surface_variable
     uncertainty_loss: True
+    
 
 
 data: 
@@ -33,14 +46,17 @@ train:
     learning_rate: 1
     weight_decay: 1e-5
     scheduler: 
-      name: NoamLR
-      hidden_dim: 192
-      warmup_steps: 1000
+      # name: NoamLR
+      # hidden_dim: 192
+      # warmup_steps: 1000
+      name: CosineAnnealingLR
+      T_max: 200
+      eta_min: 1e-8
   n_epochs: 200  
   ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint
   device: cuda:0
   autoregressive: True
-  validate_step : 500
+  validate_step : 2000
   # time_regularization: True
   time_regularization: False
   time_regularization_weight: 1
@@ -61,10 +77,12 @@ train:
 
 logger: #default wandb
     project: weather-forecast-deepspeed
-    name: swin-run-384-patch2-uncertainty_loss
+    name: multivarible-swin-96-patch1-[1,1,6]-uncertainty-fusion-layer
 
 seed: 114514
 
 hydra:
   run:
     dir: null
+
+    

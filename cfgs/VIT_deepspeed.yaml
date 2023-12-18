@@ -1,27 +1,24 @@
 model:
-  model_path: model.swin_unet #'dense' or 'conv', 'dense2' or 'conv2'
-  model_type: SwinTransformerSys
+  model_path: model.VIT #'dense' or 'conv', 'dense2' or 'conv2'
+  model_type: Model
   param: 
-    param: 
-    in_seq_length: 1
-    out_seq_length: 1
-    input_dim: 68
-    output_dim: 68
+    input_dim: 73
+    output_dim: 73
     lat_dim: 32
     lon_dim: 64 # above are input and output parameters
-    patch_size: 2
     hidden_dim: 384
-    window_size: 4
-    drop_rate: 0.3
-    attn_drop_rate: 0.3
+    patch_size: 2
+    n_heads: 6
+    num_layers: 24
+    # drop_rate: 0.3
+    # attn_drop_rate: 0.3
     ape: True
-    uncertainty_loss: True
 
 
 data: 
   data_path : /dev/shm/store/checkpoint/original_dataset
   npy_name: /dev/shm/store/original_dataset/dataset.npy
-  shape: [58436, 68, 32, 64]
+  shape: [58436, 73, 32, 64]
   preload_to_memory: False
   augment: False
   train_range: [0,56000]
@@ -37,13 +34,10 @@ train:
       hidden_dim: 192
       warmup_steps: 1000
   n_epochs: 200  
-  ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint
+  ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint/dropout0.3attention_0.3
   device: cuda:0
   autoregressive: True
   validate_step : 500
-  # time_regularization: True
-  time_regularization: False
-  time_regularization_weight: 1
 
   batch_size: 64
 
@@ -61,7 +55,7 @@ train:
 
 logger: #default wandb
     project: weather-forecast-deepspeed
-    name: swin-run-384-patch2-uncertainty_loss
+    name: VIT-AR-hidden384-layer24
 
 seed: 114514
 

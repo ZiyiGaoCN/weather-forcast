@@ -1,0 +1,75 @@
+model:
+  model_path: model.swin_unet_multivariable #'dense' or 'conv', 'dense2' or 'conv2'
+  # model_type: Model
+  # param: 
+  #   lat_dim: 32
+  #   lon_dim: 64 # above are input and output parameters
+  #   hidden_dim: 384
+  #   ape: True
+  #   patch_size: [2,2,1]
+  #   fusion_layers: [4,4,4]
+  #   fusion_window_size: [1,1,6]
+  #   fusion_hidden_size: [384,768,1536]
+  #   time_embed: True
+  #   # fusion_hidden_size: [768,1536,3072]
+  #   variable_dict:
+  #     temperature: 13
+  #     v_component_of_wind: 13
+  #     specific_humidity: 13
+  #     geopotential: 13
+  #     u_component_of_wind: 13
+  #     surface_variable: 8
+  #   variable_down: [68,43,28]
+  #   variable_order:
+  #     - temperature
+  #     - v_component_of_wind
+  #     - specific_humidity
+  #     - geopotential
+  #     - u_component_of_wind
+  #     - surface_variable
+    
+
+data: 
+  data_path : /dev/shm/store/checkpoint/original_dataset
+  npy_name: /dev/shm/store/original_dataset/dataset.npy
+  buffer_folder: /dev/shm/store/buffer
+  buffer_size: 20000
+  epoch_size: 6400
+  shape: [58436, 68, 32, 64]
+  preload_to_memory: False
+  augment: False
+  train_range: [0,56000]
+  val_range: [56000,58436]
+
+finetune: 
+  # original_dir: ../dataset
+  initialize_checkpoint: /home/gaoziyi/weather/deepspeed_checkpoint/multivarible-swin-192-patch1-[1,1,6]-uncertainty/step_30000/mp_rank_00_model_states.pt
+
+train:   
+  optimizer:
+    name: Adam
+    learning_rate: 0.1  
+    weight_decay: 1e-5
+    scheduler: 
+      name: NoamLR
+      hidden_dim: 192
+      warmup_steps: 1000
+  time_regularization: False
+  n_epochs: 200
+  ckpt_dir: /home/gaoziyi/weather/finetune_checkpoint
+  device: cuda:6
+  autoregressive: True
+  validate_step: 2000
+
+  dataloader:
+    num_workers: 16
+    batch_size: 96
+    prefetch_factor: 16
+  deepspeed_config: ./cfgs/deepspeed_finetune-4e-7-nodecay.json
+
+logger: #default wandb
+   project: fengwu-finetune
+   name: multivarible-swin-192-patch1-1-1-6-uncertainty_step_30000_4e-7-fix-epoch-6400-nodecay
+
+seed: 114514
+
