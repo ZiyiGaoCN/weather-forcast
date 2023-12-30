@@ -1,0 +1,333 @@
+"""
+This script demonstrates initialisation, training, evaluation, and forecasting of ForecastNet. The dataset used for the
+time-invariance test in section 6.1 of the ForecastNet paper is used for this demonstration.
+
+Paper:
+"ForecastNet: A Time-Variant Deep Feed-Forward Neural Network Architecture for Multi-Step-Ahead Time-Series Forecasting"
+by Joel Janek Dabrowski, YiFan Zhang, and Ashfaqur Rahman
+Link to the paper: https://arxiv.org/abs/2002.04155
+"""
+
+from http import client
+from weather_forcast.utils import initial_model
+import hydra
+import numpy as np
+import torch
+from omegaconf import DictConfig, OmegaConf , open_dict
+import importlib
+
+import torch.nn.functional as F
+
+from train_deepspeed import train
+from dataset.loading import loading
+import wandb
+
+from dataset.dataset_npy import WeatherDataet_differentdata
+from torch.utils.data import DataLoader
+
+from dataset.transform.transform import Normalize, InverseNormalize
+import datetime
+import os
+
+from rollout import Construct_Dataset
+import tqdm
+import copy
+import deepspeed
+from deepspeed import comm
+
+from dataset.dataset_fengwu import Replay_buffer_fengwu
+from loguru import logger as loguru_logger
+from dataset.dataset_torch import WeatherDataet_numpy
+from validate import validate_20step
+import loguru
+
+#Use a fixed seed for repreducible results
+np.random.seed(1)
+ 
+def set_seed(seed_value = 0):
+    torch.manual_seed(seed_value)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed_value)
+    np.random.seed(seed_value)
+
+def main(cfg:DictConfig):
+
+    set_seed(cfg.seed)
+
+    
+    current_time = datetime.datetime.now()
+    
+    print(cfg)
+    
+    # Initialize model 
+    # model = initial_model(cfg.model)
+
+    if cfg.finetune.initialize_checkpoint is not None:
+        
+        model_weight = torch.load(cfg.finetune.initialize_checkpoint)
+        if hasattr(model_weight,'model_params'):
+            model = initial_model(model_weight['model_params'])
+            client_sd = {'model_params': model_weight['model_params']}
+        else:
+            model = initial_model(cfg.model)
+            client_sd = {'model_params': cfg.model}
+        model.load_state_dict(model_weight['module'])
+        del model_weight
+    else: 
+        raise NotImplementedError
+
+    with open_dict(cfg):
+        cfg.train.save_file = f'{cfg.train.ckpt_dir}/{cfg.logger.name}'
+    try:
+        os.mkdir(cfg.train.save_file)
+    except:
+        loguru.logger.warning('dir exists')
+
+    if hasattr(cfg,'logger') and cfg.deepspeed.local_rank == 0:
+        config = OmegaConf.to_container(
+            cfg, resolve=True, throw_on_missing=True
+        )
+        run = wandb.init(
+            project=cfg.logger.project,
+            name=cfg.logger.name,
+            config=config)
+        logger = wandb
+    else:
+        logger = None 
+
+    base_path = cfg.data.npy_name
+    data_ori = np.memmap(base_path, dtype = 'float32',mode = 'c', shape = tuple(cfg.data.shape) , order = 'C')
+    
+    buffer_folder = os.path.join(cfg.data.buffer_folder,cfg.logger.name)
+    
+    try: 
+        os.mkdir(buffer_folder)
+    except:
+        loguru.logger.warning('buffer dir exists')
+    
+    buffer_file = os.path.join(buffer_folder,'replaybuffer.npy')
+    
+    loguru.logger.info("Creating replay buffer")
+    
+    Replay_Buffer = Replay_buffer_fengwu(
+        data=data_ori, train_range=cfg.data.train_range, buffer_file = buffer_file,
+        buffer_size=cfg.data.buffer_size, shape = cfg.data.shape,
+        uncertainty_finetune = cfg.train.uncertainty_finetune,
+    )
+    loguru.logger.info("Replay buffer created")
+    
+    valid_set = WeatherDataet_numpy(data_ori,range=cfg.data.val_range,step=20)
+    validloader = DataLoader(valid_set, batch_size=32, shuffle=False, num_workers=8)
+
+    step = 0
+    
+    deepspeed_config_normal = cfg.train.deepspeed_config_yaml
+    deepspeed_config_dict = OmegaConf.to_container(deepspeed_config_normal, resolve=True)
+    
+    model_engine, optimizer, trainloader, _ = deepspeed.initialize(config=deepspeed_config_dict,
+                                                    model=model,
+                                                    model_parameters=model.parameters(),
+                                                    training_data=None)
+    # print(cfg.train.optimizer)
+    # logger_info.info(cfg.train.optimizer)
+    
+    train_param = cfg.train
+    
+    if cfg.train.optimizer.scheduler.name == 'NoamLR':
+        from scheduler.NOAM import NOAMLR
+        scheduler = NOAMLR(optimizer, warmup_steps=cfg.train.optimizer.scheduler.warmup_steps, model_size=cfg.train.optimizer.scheduler.hidden_dim)
+    elif cfg.train.optimizer.scheduler.name == 'CosineAnnealingLR':
+        from weather_forcast.scheduler.Cosine import CosineLR
+        scheduler = CosineLR(optimizer, num_epochs=train_param.optimizer.scheduler.T_max, 
+                             eta_min=train_param.optimizer.scheduler.eta_min,
+                             warmup_steps=train_param.optimizer.scheduler.warmup_steps)    
+    else:
+        scheduler = None
+
+    train_param = cfg.train
+    deepspeed_config = cfg.deepspeed
+
+    
+
+    for epoch in range(cfg.train.n_epochs):
+        if epoch > 0:
+            comm.barrier() 
+        
+        loguru.logger.info(f'Epoch: {epoch + 1} of {cfg.train.n_epochs}')
+        loguru.logger.info('Sampling data')
+
+        if hasattr(cfg.data,'sample'):
+            if cfg.data.sample.name == 'Poisson':
+                from weather_forcast.sample.poisson import distribution
+                t = epoch/10
+                wandb.log({
+                    "sample_ratio": t,
+                })
+                sample_ratio = distribution(t)
+            elif cfg.data.sample.name == 'yl':
+                from weather_forcast.sample.yl import distribution,get_param
+                t = cfg.data.sample.n*(epoch/cfg.train.n_epochs)
+                p = get_param(t)[0]
+                wandb.log({
+                    "sample_ratio": t,
+                })
+                sample_ratio = distribution(p)
+            else:
+                sample_ratio = None
+        else :
+            sample_ratio= None 
+        loguru.logger.info(f'sample_ratio:{sample_ratio}')
+
+        dataset = Replay_Buffer.build_dataset(size=cfg.data.epoch_size,sample_ratio=sample_ratio)
+        loguru.logger.info('Data sampled')
+                
+        trainloader = model_engine.deepspeed_io(dataset)
+        model_engine.dataloader = trainloader
+
+        r_step = 0
+        model.train()
+        for i,(input,target,time, time_step) in enumerate(tqdm.tqdm(trainloader)):
+            # Send input and output data to the GPU/CPU
+            input = input.to(model_engine.device)
+            target = target.to(model_engine.device)
+            # Compute outputs and loss for a mixture density network output
+            
+            # loguru.logger.info("Input generated")
+            
+            B, in_seq, C_in, H, W = input.shape
+            B, out_seq, C_out, H, W = target.shape
+            
+            time_embed = 1 if model.time_embed else None
+            
+            input = input.view(B, in_seq*C_in, H, W)
+            target = target.view(B, out_seq*C_out, H, W)
+            # outputs = model_engine(input,time_embed)
+            
+            if model.uncertainty_loss:
+                outputs, sigma = model_engine(input,time_embed)
+            else:
+                outputs = model_engine(input,time_embed)
+            
+            loss = F.mse_loss(input=outputs, target=target, reduction='none')
+
+            
+            if cfg.train.time_regularization: 
+                raise NotImplementedError
+                with torch.no_grad():
+                    time_embed_half = 0.5 
+                    half_output = model_engine(input,time_embed_half)
+                outputs_regularization = model_engine(half_output,time_embed_half)
+                target_output = outputs.detach()
+                loss_regularization = F.mse_loss(input=outputs_regularization, target=target_output)
+
+            if train_param.time_regularization:
+                raise NotImplementedError
+                compute_loss = loss + train_param.time_regularization_weight * loss_regularization
+            else:
+                sigma_mean = sigma.mean(dim=(2,3),keepdim=True)
+                compute_loss = loss / (2*torch.exp(2*sigma_mean)) + sigma_mean 
+            
+            
+            compute_loss = compute_loss.mean()
+
+            model_engine.backward(compute_loss)
+            
+            # if step % 100 == 0:
+            #     comm.barrier()
+            #     grads = [torch.sum(p.grad**2).item() for p in model.parameters() if (p is not None) and p.requires_grad]
+            #     grad_norm = np.sqrt(sum(grads))
+            #     if wandb is not None and deepspeed_config.local_rank == 0:
+            #         wandb.log({
+            #             'grad_norm': grad_norm,
+            #         }, commit=False)
+                    
+            model_engine.step() 
+            
+            time += 1
+            time_step += 1
+            Replay_Buffer.add_buffer_20step(
+                outputs.detach().cpu().numpy(), time.detach().cpu().numpy(), time_step.detach().cpu().numpy(),
+                sigma=np.exp(sigma_mean.detach().cpu().numpy()) if hasattr(cfg.train,'uncertainty_finetune') and cfg.train.uncertainty_finetune else None
+                )
+            
+            r_step += 1
+            if r_step % model_engine.gradient_accumulation_steps() == 0:
+                r_step = 0
+                step +=1
+                scheduler.step()   
+            
+                if wandb is not None and deepspeed_config.local_rank == 0 :
+                    wandb.log({
+                        'train_loss': loss.detach().mean().item(),
+                        'lr': optimizer.param_groups[0]['lr']
+                    })
+                    if model.uncertainty_loss:
+                        wandb.log({
+                            # 'train_loss_sigma': torch.exp(sigma.item()),
+                            'computed_loss': compute_loss.item()
+                        },commit=False)
+                        sigma_mean = torch.exp(sigma).mean(axis=(0,2,3))
+                        upload = {
+                                'uncertainty/2m': sigma_mean[-1],
+                                'uncertainty/10v': sigma_mean[-2],
+                                'uncertainty/10u': sigma_mean[-3],
+                                'uncertainty/z500': sigma_mean[45],
+                                'uncertainty/t850': sigma_mean[10],
+                            }
+                        wandb.log(upload, commit=False)
+                    if train_param.time_regularization:
+                        raise NotImplementedError 
+                        wandb.log({
+                            'train_loss_time_embed': loss_regularization.item(),
+                        },commit=False)
+                if hasattr(train_param,'validate_step') and step % train_param.validate_step == 0 and hasattr(train_param,'save_file'):
+                
+                    client_sd['step'] = step
+                    ckpt_id = f'step_{step}'
+                    model_engine.save_checkpoint(train_param.save_file, ckpt_id,client_sd)
+
+            
+                if step % cfg.train.validate_step == 0 and cfg.deepspeed.local_rank == 0:
+                    if valid_set is not None:
+                        params_20,acc_20 = validate_20step(model,validloader)
+                        if wandb is not None:
+                            
+                            day = {
+                                "6h" : 0, 
+                                "day1": 3, 
+                                "day3": 11,
+                                "day5": 19,
+                            }
+                            
+                            for k,v in day.items():
+                                params = params_20[v]
+                                
+                                upload = {
+                                    f'{k}/2m': params[-1],
+                                    f'{k}/10v': params[-2],
+                                    f'{k}/10u': params[-3],
+                                    f'{k}/z500': params[45],
+                                    f'{k}/t850': params[10],
+                                }
+                                wandb.log(upload, commit=False)
+                
+
+import argparse
+import yaml
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="hello")
+    parser.add_argument('--local_rank', default=-1, type=int, help='node rank for distributed training')
+    parser.add_argument('--cfg_path', default=None, type=str, help='node rank for distributed training')
+    args = parser.parse_args()
+    
+    # cfg_path = './cfgs/finetune/finetune2_deepspeed.yaml'
+
+    with open(args.cfg_path, 'r') as file:
+        yaml_data = yaml.safe_load(file)
+
+    # Convert to omegaconf.DictConfig
+    config = OmegaConf.create(yaml_data)
+    config_deepspeed = OmegaConf.create({"deepspeed":vars(args)})
+    config = OmegaConf.merge(config, config_deepspeed)
+    main(config)
