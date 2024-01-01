@@ -53,11 +53,6 @@ def set_seed(seed_value = 0):
 def main(cfg:DictConfig):
 
     set_seed(cfg.seed)
-
-    
-    current_time = datetime.datetime.now()
-    
-    print(cfg)
     
     # Initialize model 
     # model = initial_model(cfg.model)
@@ -65,16 +60,23 @@ def main(cfg:DictConfig):
     if cfg.finetune.initialize_checkpoint is not None:
         
         model_weight = torch.load(cfg.finetune.initialize_checkpoint)
-        if hasattr(model_weight,'model_params'):
+        if model_weight.get('model_params',None):
             model = initial_model(model_weight['model_params'])
+            loguru.logger.info("loading from checkpoint")
+            loguru.logger.info(model_weight['model_params'])
             client_sd = {'model_params': model_weight['model_params']}
         else:
+            loguru.logger.info("loading from config")
+            loguru.logger.info(cfg.model)
             model = initial_model(cfg.model)
             client_sd = {'model_params': cfg.model}
         model.load_state_dict(model_weight['module'])
         del model_weight
     else: 
         raise NotImplementedError
+
+    if cfg.train.uncertainty_loss == False:
+        model.uncertainty_loss = False
 
     with open_dict(cfg):
         cfg.train.save_file = f'{cfg.train.ckpt_dir}/{cfg.logger.name}'
@@ -98,24 +100,35 @@ def main(cfg:DictConfig):
     base_path = cfg.data.npy_name
     data_ori = np.memmap(base_path, dtype = 'float32',mode = 'c', shape = tuple(cfg.data.shape) , order = 'C')
     
-    buffer_folder = os.path.join(cfg.data.buffer_folder,cfg.logger.name)
+    large_buffer_folder = os.path.join(cfg.data.large_buffer_folder,cfg.logger.name)
+    small_buffer_folder = os.path.join(cfg.data.buffer_folder,cfg.logger.name)
+    try: 
+        os.mkdir(large_buffer_folder)
+    except:
+        loguru.logger.warning('large_buffer_folder dir exists')
     
     try: 
-        os.mkdir(buffer_folder)
+        os.mkdir(small_buffer_folder)
     except:
-        loguru.logger.warning('buffer dir exists')
+        loguru.logger.warning('small_buffer_folder dir exists')
     
-    buffer_file = os.path.join(buffer_folder,'replaybuffer.npy')
+    
+    large_buffer_file = os.path.join(large_buffer_folder,'replaybuffer.npy')
+    # small_buffer_folder = os.path.join()
     
     loguru.logger.info("Creating replay buffer")
     
     Replay_Buffer = Replay_buffer_fengwu(
-        data=data_ori, train_range=cfg.data.train_range, buffer_file = buffer_file,
+        data=data_ori, train_range=cfg.data.train_range, buffer_file = large_buffer_file,
+        small_buffer_folder = small_buffer_folder,
         buffer_size=cfg.data.buffer_size, shape = cfg.data.shape,
         uncertainty_finetune = cfg.train.uncertainty_finetune,
     )
     loguru.logger.info("Replay buffer created")
     
+    train_valid_set = WeatherDataet_numpy(data_ori,range=[55000,55480],step=20)
+    train_validloader = DataLoader(train_valid_set, batch_size=32, shuffle=False, num_workers=8)
+
     valid_set = WeatherDataet_numpy(data_ori,range=cfg.data.val_range,step=20)
     validloader = DataLoader(valid_set, batch_size=32, shuffle=False, num_workers=8)
 
@@ -128,8 +141,6 @@ def main(cfg:DictConfig):
                                                     model=model,
                                                     model_parameters=model.parameters(),
                                                     training_data=None)
-    # print(cfg.train.optimizer)
-    # logger_info.info(cfg.train.optimizer)
     
     train_param = cfg.train
     
@@ -203,7 +214,7 @@ def main(cfg:DictConfig):
             target = target.view(B, out_seq*C_out, H, W)
             # outputs = model_engine(input,time_embed)
             
-            if model.uncertainty_loss:
+            if model.uncertainty_loss and cfg.train.uncertainty_loss:
                 outputs, sigma = model_engine(input,time_embed)
             else:
                 outputs = model_engine(input,time_embed)
@@ -224,9 +235,11 @@ def main(cfg:DictConfig):
                 raise NotImplementedError
                 compute_loss = loss + train_param.time_regularization_weight * loss_regularization
             else:
-                sigma_mean = sigma.mean(dim=(2,3),keepdim=True)
-                compute_loss = loss / (2*torch.exp(2*sigma_mean)) + sigma_mean 
-            
+                if model.uncertainty_loss and cfg.train.uncertainty_loss:
+                    sigma_mean = sigma.mean(dim=(2,3),keepdim=True)
+                    compute_loss = loss / (2*torch.exp(2*sigma_mean)) + sigma_mean 
+                else:
+                    compute_loss = loss           
             
             compute_loss = compute_loss.mean()
 
@@ -254,7 +267,8 @@ def main(cfg:DictConfig):
             if r_step % model_engine.gradient_accumulation_steps() == 0:
                 r_step = 0
                 step +=1
-                scheduler.step()   
+                if scheduler is not None: 
+                    scheduler.step()   
             
                 if wandb is not None and deepspeed_config.local_rank == 0 :
                     wandb.log({
@@ -289,6 +303,7 @@ def main(cfg:DictConfig):
             
                 if step % cfg.train.validate_step == 0 and cfg.deepspeed.local_rank == 0:
                     if valid_set is not None:
+                        train_param_20, train_acc_20 = validate_20step(model,train_validloader)
                         params_20,acc_20 = validate_20step(model,validloader)
                         if wandb is not None:
                             
@@ -301,7 +316,8 @@ def main(cfg:DictConfig):
                             
                             for k,v in day.items():
                                 params = params_20[v]
-                                
+                                train_params = train_param_20[v]
+
                                 upload = {
                                     f'{k}/2m': params[-1],
                                     f'{k}/10v': params[-2],
@@ -310,6 +326,15 @@ def main(cfg:DictConfig):
                                     f'{k}/t850': params[10],
                                 }
                                 wandb.log(upload, commit=False)
+                                upload_train = {
+                                    f'{k}/train_2m': train_params[-1],
+                                    f'{k}/train_10v': train_params[-2],
+                                    f'{k}/train_10u': train_params[-3],
+                                    f'{k}/train_z500': train_params[45],
+                                    f'{k}/train_t850': train_params[10],
+                                } 
+                                wandb.log(upload_train, commit=False)
+                                
                 
 
 import argparse
@@ -318,16 +343,26 @@ import yaml
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="hello")
     parser.add_argument('--local_rank', default=-1, type=int, help='node rank for distributed training')
-    parser.add_argument('--cfg_path', default=None, type=str, help='node rank for distributed training')
+    parser.add_argument('--cfg_path', default=None, type=str, help='base config')
+    parser.add_argument('--cfg_new', default=None, type=str, help='new config')
+    
     args = parser.parse_args()
     
-    # cfg_path = './cfgs/finetune/finetune2_deepspeed.yaml'
-
     with open(args.cfg_path, 'r') as file:
         yaml_data = yaml.safe_load(file)
+    loguru.logger.info(args.cfg_new)
+    if args.cfg_new is not None:
+        loguru.logger.info(f'load overiding config from {args.cfg_new}')
+        with open(args.cfg_new) as file:
+            new_yaml_data = yaml.safe_load(file)
 
     # Convert to omegaconf.DictConfig
     config = OmegaConf.create(yaml_data)
-    config_deepspeed = OmegaConf.create({"deepspeed":vars(args)})
-    config = OmegaConf.merge(config, config_deepspeed)
+    # config_deepspeed = 
+    config = OmegaConf.merge(config, OmegaConf.create({"deepspeed":vars(args)}))
+    
+    config = OmegaConf.merge(config, OmegaConf.create(new_yaml_data))
+    
+    loguru.logger.info(config)
+    
     main(config)
