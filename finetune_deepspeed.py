@@ -32,6 +32,7 @@ import tqdm
 import copy
 import deepspeed
 from deepspeed import comm
+from weather_forcast.utils import initial_model
 
 #Use a fixed seed for repreducible results
 np.random.seed(1)
@@ -56,12 +57,7 @@ def main(cfg:DictConfig):
     
     print(cfg)
     
-    # Initialize model 
-    model_path = cfg.model.model_path
-    model_type = cfg.model.model_type
-    model_module = importlib.import_module(model_path)
-    model_class = getattr(model_module, model_type)
-    model = model_class(**cfg.model.param)
+    model = initial_model(cfg.model)
 
     logger = None 
     if hasattr(cfg,'logger') and cfg.deepspeed.local_rank == 0:
@@ -135,15 +131,6 @@ def main(cfg:DictConfig):
                 preload=False,range=(start_range+i,13148))
         
 
-        # if i % 2 == 1:
-        #     dataset = WeatherDataet_differentdata(
-        #         target_data=data_ori,input_data1=data_0,input_data2=data_1,
-        #         preload=False,range=(i,6574))
-        # else:
-        #     dataset = WeatherDataet_differentdata(
-        #         target_data=data_ori,input_data1=data_0,input_data2=data_1,
-        #         preload=False,range=(6574+i,13148))
-        
         valid = WeatherDataet_differentdata(
             target_data=data_ori,input_data1=data_0,input_data2=data_1,
             preload=False,range=(13148+i,14612))
