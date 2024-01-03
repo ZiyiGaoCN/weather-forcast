@@ -36,9 +36,11 @@ def load_dataset(data_dir, from_year, to_year):
     return ds
 
 
-class WeatherDataet_torch(Dataset):
+class WeatherDataet_numpy(Dataset):
 
-    def __init__(self, data, range , transform=None, target_transform=None, autoregressive = False, preload = False):        
+    def __init__(self, data, range , 
+                 transform=None, target_transform=None, step = 1,
+                 channul_range=(0,112), preload = False):        
         start = range[0]
         end = range[1]
         assert start < end
@@ -51,14 +53,11 @@ class WeatherDataet_torch(Dataset):
         self.start = start
         self.end = end
         
-        self.num_step = 1 if autoregressive else 20  #  default: 20, for 5-days
+        self.num_step = step    #  default: 20, for 5-days
         
-        self.num_data = (end  - start ) - (self.num_step + 1)
+        self.num_data = (end  - start ) - (self.num_step)
 
-        if not autoregressive:
-            self.target_range  = slice(65,70)
-        else:
-            self.target_range  = slice(0,70)
+        self.channel_range = slice(channul_range[0], channul_range[1])
 
         if preload:
             self.data = data.clone()
@@ -74,9 +73,12 @@ class WeatherDataet_torch(Dataset):
         id = idx + self.start
         # you can reduce it for auto-regressive training 
         
-        input = self.data[id : id + 2, : , :, :].clone()
-        target = self.data[id + 2 : id + 2 + self.num_step, self.target_range , : , : ].clone()
+        input = np.array(self.data[id : id + 1, : , :, :])
+        target = np.array(self.data[id + 1 : id + 1 + self.num_step, self.channel_range , : , : ])
         
+        input = torch.from_numpy(input)
+        target = torch.from_numpy(target)
+
         input = torch.nan_to_num(input) # t c h w 
         target = torch.nan_to_num(target) # t c h w 
         if self.target_transform:
