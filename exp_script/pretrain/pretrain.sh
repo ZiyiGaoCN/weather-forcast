@@ -1,0 +1,1 @@
+deepspeed --include=localhost:0,1,2,3 --master_port=29499 main_deepspeed.py --cfg_path ./cfgs/VIT_deepspeed.yaml

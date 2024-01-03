@@ -1,0 +1,40 @@
+model:
+  model_path: model.swin_unet_multivariable #'dense' or 'conv', 'dense2' or 'conv2'    
+data: 
+  sample: 
+    name: Default
+    n: 10
+    T_max: 200
+
+
+finetune: 
+  initialize_checkpoint: /home/gaoziyi/weather/deepspeed_checkpoint/multivarible-swin-96-patch1-dropout0.5/step_80000/mp_rank_00_model_states.pt
+  
+train:   
+  scheduler: 
+    name: CosineAnnealingLR
+    T_max: 40000
+    eta_min: 1.0e-9
+    warmup_steps: 1000
+  time_regularization: False
+  n_epochs: 200
+  ckpt_dir: /home/gaoziyi/weather/finetune_checkpoint
+  validate_step: 2000
+  uncertainty_finetune: False
+
+  deepspeed_config_yaml:
+    optimizer:
+      type: Adam
+      params:
+        lr: 2.0e-6
+        weight_decay: 0
+    gradient_clipping: 5
+    
+
+
+logger: #default wandb
+  project: fengwu-finetune
+  name: multivarible-swin-96-patch1-dropout0.5_step_80000_finetune_baseline2.0e-6_nouncertain
+
+seed: 114514
+

@@ -1,0 +1,46 @@
+model:
+  model_path: model.swin_unet_multivariable #'dense' or 'conv', 'dense2' or 'conv2'    
+data: 
+  sample: 
+    name: Default
+    n: 10
+    T_max: 200
+
+
+finetune: 
+  initialize_checkpoint: /home/gaoziyi/weather/deepspeed_checkpoint/VIT-/step_48000/mp_rank_00_model_states.pt
+  
+train:   
+  optimizer:
+    name: Adam
+    learning_rate: 0.1  
+    weight_decay: 1e-5
+    scheduler: 
+      name: NO
+      T_max: 40000
+      eta_min: 1.0e-9
+      warmup_steps: 1000
+  time_regularization: False
+  n_epochs: 200
+  ckpt_dir: /home/gaoziyi/weather/finetune_checkpoint
+  validate_step: 2000
+  uncertainty_loss: False
+  uncertainty_finetune: False
+
+  deepspeed_config_yaml:
+    optimizer:
+      type: AdamW
+      params:
+        lr: 1.0e-7
+        betas: [0.9, 0.95]
+        weight_decay: 0.1
+    gradient_clipping: 5
+    
+
+
+logger: #default wandb
+  project: fengwu-finetune
+  name: VIT-nouncertainloss-lrfix-adamw-wd0.1-1e-7
+
+seed: 114514
+

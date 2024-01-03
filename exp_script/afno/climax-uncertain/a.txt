@@ -1,0 +1,1 @@
+/home/gaoziyi/weather/deepspeed_checkpoint/singlevariable-384-patch1-meaninguncertainty-4-clipping1-dropout0.5/step_20000/mp_rank_00_model_states.pt
