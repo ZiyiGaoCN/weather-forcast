@@ -40,7 +40,7 @@ train:
 
 logger: #default wandb
   project: fourcastnet-finetune
-  name: climax-nocertain
+  name: climax-uncertain
 
 seed: 114514
 
