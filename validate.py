@@ -7,26 +7,76 @@ import torch.nn.functional as F
 import tqdm
 import os
 
+from utils import calculate_rmse,calculate_acc
 from dataset.dataset_npy import WeatherDataet_npy
 
 def validate_onestep(model,dataloader):
-    losses = []
-    sum_up = []
+    rmse = []
+    acc = []
     model.eval()
     device = next(model.parameters()).device
     with torch.no_grad():
         for i,(input,target) in tqdm.tqdm(enumerate(dataloader)):
-            outputs = []
-            input = input.reshape(-1,140,161,161)
+            input = input.reshape(-1,68,32,64)
             input = input.to(device)
             target = target.to(device)
-            output = model(input) #.detach().cpu()
-            target = target.reshape(-1,70,161,161)
-            valid_loss = F.mse_loss(output,target,reduction='none').cpu().float()
-            sum_up.append(valid_loss.mean())
-            losses.append(valid_loss.mean(dim=(0,2,3)))
-    return np.mean(sum_up), np.mean(losses,axis=0)[65:70]
+            
+            if model.time_embed:
+                time_embed = 1
+            else:
+                time_embed = None
+            
+            if model.uncertainty_loss:
+                output, sigma = model(input,time_embed)
+            else:
+                output = model(input,time_embed) #.detach().cpu()
+            
+            target = target.reshape(-1,68,32,64)
+            
+            # valid_loss = F.mse_loss(output,target,reduction='none').cpu().float()
+            rmse.append(calculate_rmse(output,target))
+            acc.append(calculate_acc(output,target))
+            
+    concat_rmse = np.concatenate(rmse,axis=0)
+    concat_acc = np.concatenate(acc,axis=0)
+    return np.mean(concat_rmse,axis=0), np.mean(concat_acc,axis=0)
 
+def validate_20step(model,dataloader,step = 20):
+    rmses = [ [] for i in range(step)]
+    accs = [ [] for i in range(step)]
+    device = next(model.parameters()).device
+    model.eval()
+    with torch.no_grad():
+        for i,(input,target) in tqdm.tqdm(enumerate(dataloader)):
+            input = input.reshape(-1,68,32,64)
+            input = input.to(device)
+            
+            for j in range(step):
+                if model.time_embed:
+                    time_embed = 1
+                else:
+                    time_embed = None
+
+                if model.uncertainty_loss:
+                    output, sigma = model(input,time_embed)
+                    # print(sigma.max(),sigma.min())
+                else:
+                    output = model(input,time_embed) #.detach().cpu()
+
+                # output = model(input,time_embed) #.detach().cpu()
+                target_slice = target[:,j,:,:,:] 
+                target_slice = target_slice.contiguous().to(device)
+                input = output 
+                # valid_loss = F.mse_loss(output,target_slice,reduction='none').cpu().float()
+                rmses[j].append(calculate_rmse(output,target_slice))
+                accs[j].append(calculate_acc(output,target_slice))
+    for i in range(step):
+        concat_rmse = np.concatenate(rmses[i],axis=0)
+        concat_acc = np.concatenate(accs[i],axis=0)
+        rmses[i] = np.mean(concat_rmse,axis=0)
+        accs[i] = np.mean(concat_acc,axis=0)
+        
+    return rmses, accs
 
 @hydra.main(version_base=None, config_path='./cfgs/validate', config_name="validate_onestep")
 def main(cfg):

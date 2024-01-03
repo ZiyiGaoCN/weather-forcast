@@ -21,8 +21,6 @@ from train_deepspeed import train
 from dataset.loading import loading
 import wandb
 
-from torch.utils.data import DataLoader
-
 from dataset.dataset_torch import WeatherDataet_numpy
 from dataset.transform.transform import Normalize, InverseNormalize
 from utils import initial_model

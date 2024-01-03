@@ -100,31 +100,34 @@ def main(cfg:DictConfig):
     base_path = cfg.data.npy_name
     data_ori = np.memmap(base_path, dtype = 'float32',mode = 'c', shape = tuple(cfg.data.shape) , order = 'C')
     
-    large_buffer_folder = os.path.join(cfg.data.large_buffer_folder,cfg.logger.name)
-    small_buffer_folder = os.path.join(cfg.data.buffer_folder,cfg.logger.name)
-    try: 
-        os.mkdir(large_buffer_folder)
-    except:
-        loguru.logger.warning('large_buffer_folder dir exists')
+    # large_buffer_folder = os.path.join(cfg.data.large_buffer_folder,cfg.logger.name)
+    # small_buffer_folder = os.path.join(cfg.data.buffer_folder,cfg.logger.name)
+    # try: 
+    #     os.mkdir(large_buffer_folder)
+    # except:
+    #     loguru.logger.warning('large_buffer_folder dir exists')
     
-    try: 
-        os.mkdir(small_buffer_folder)
-    except:
-        loguru.logger.warning('small_buffer_folder dir exists')
+    # try: 
+    #     os.mkdir(small_buffer_folder)
+    # except:
+    #     loguru.logger.warning('small_buffer_folder dir exists')
     
     
-    large_buffer_file = os.path.join(large_buffer_folder,'replaybuffer.npy')
+    # large_buffer_file = os.path.join(large_buffer_folder,'replaybuffer.npy')
     # small_buffer_folder = os.path.join()
     
     loguru.logger.info("Creating replay buffer")
     
-    Replay_Buffer = Replay_buffer_fengwu(
-        data=data_ori, train_range=cfg.data.train_range, buffer_file = large_buffer_file,
-        small_buffer_folder = small_buffer_folder,
-        buffer_size=cfg.data.buffer_size, shape = cfg.data.shape,
-        uncertainty_finetune = cfg.train.uncertainty_finetune,
-    )
-    loguru.logger.info("Replay buffer created")
+    # Replay_Buffer = Replay_buffer_fengwu(
+    #     data=data_ori, train_range=cfg.data.train_range, buffer_file = large_buffer_file,
+    #     small_buffer_folder = small_buffer_folder,
+    #     buffer_size=cfg.data.buffer_size, shape = cfg.data.shape,
+    #     uncertainty_finetune = cfg.train.uncertainty_finetune,
+    # )
+    # loguru.logger.info("Replay buffer created")
+    
+    train_set = WeatherDataet_numpy(data_ori,range=cfg.data.train_range,step=2)
+    # trainloader = DataLoader(train_set, batch_size=32, shuffle=False, num_workers=8)
     
     train_valid_set = WeatherDataet_numpy(data_ori,range=[55000,55480],step=20)
     train_validloader = DataLoader(train_valid_set, batch_size=32, shuffle=False, num_workers=8)
@@ -140,7 +143,7 @@ def main(cfg:DictConfig):
     model_engine, optimizer, trainloader, _ = deepspeed.initialize(config=deepspeed_config_dict,
                                                     model=model,
                                                     model_parameters=model.parameters(),
-                                                    training_data=None)
+                                                    training_data=train_set)
     
     train_param = cfg.train
     
@@ -164,40 +167,9 @@ def main(cfg:DictConfig):
         if epoch > 0:
             comm.barrier() 
         
-        loguru.logger.info(f'Epoch: {epoch + 1} of {cfg.train.n_epochs}')
-        loguru.logger.info('Sampling data')
-
-        if hasattr(cfg.data,'sample'):
-            if cfg.data.sample.name == 'Poisson':
-                from weather_forcast.sample.poisson import distribution
-                t = epoch/10
-                wandb.log({
-                    "sample_ratio": t,
-                })
-                sample_ratio = distribution(t)
-            elif cfg.data.sample.name == 'yl':
-                from weather_forcast.sample.yl import distribution,get_param
-                t = cfg.data.sample.n*(epoch/cfg.train.n_epochs)
-                p = get_param(t)[0]
-                wandb.log({
-                    "sample_ratio": t,
-                })
-                sample_ratio = distribution(p)
-            else:
-                sample_ratio = None
-        else :
-            sample_ratio= None 
-        loguru.logger.info(f'sample_ratio:{sample_ratio}')
-
-        dataset = Replay_Buffer.build_dataset(size=cfg.data.epoch_size,sample_ratio=sample_ratio)
-        loguru.logger.info('Data sampled')
-                
-        trainloader = model_engine.deepspeed_io(dataset)
-        model_engine.dataloader = trainloader
-
         r_step = 0
         model.train()
-        for i,(input,target,time, time_step) in enumerate(tqdm.tqdm(trainloader)):
+        for i,(input,target) in enumerate(tqdm.tqdm(trainloader)):
             # Send input and output data to the GPU/CPU
             input = input.to(model_engine.device)
             target = target.to(model_engine.device)
@@ -211,16 +183,19 @@ def main(cfg:DictConfig):
             time_embed = 1 if model.time_embed else None
             
             input = input.view(B, in_seq*C_in, H, W)
-            target = target.view(B, out_seq*C_out, H, W)
+            # target = target.view(B, out_seq*C_out, H, W)
             # outputs = model_engine(input,time_embed)
             
-            if model.uncertainty_loss and cfg.train.uncertainty_loss:
-                outputs, sigma = model_engine(input,time_embed)
+            if cfg.train.uncertainty_loss:
+                assert model.uncertainty_loss == True
+                outputs_1, sigma_1 = model_engine(input,time_embed)
+                outputs_2, sigma_2 = model_engine(outputs_1,time_embed)
+                
             else:
-                outputs = model_engine(input,time_embed)
-            
-            loss = F.mse_loss(input=outputs, target=target, reduction='none')
-
+                outputs_1 = model_engine(input,time_embed)
+                outputs_2 = model_engine(outputs_1,time_embed)
+            loss_1 = F.mse_loss(input=outputs_1, target=target[:,0,...], reduction='none')
+            loss_2 = F.mse_loss(input=outputs_2, target=target[:,1,...], reduction='none')
             
             if cfg.train.time_regularization: 
                 raise NotImplementedError
@@ -235,11 +210,17 @@ def main(cfg:DictConfig):
                 raise NotImplementedError
                 compute_loss = loss + train_param.time_regularization_weight * loss_regularization
             else:
-                if model.uncertainty_loss and cfg.train.uncertainty_loss:
-                    sigma_mean = sigma.mean(dim=(2,3),keepdim=True)
-                    compute_loss = loss / (2*torch.exp(2*sigma_mean)) + sigma_mean 
+                if cfg.train.uncertainty_loss:
+                    assert model.uncertainty_loss == True
+                    sigma_mean_1 = sigma_1.mean(dim=(2,3),keepdim=True)
+                    sigma_mean_2 = sigma_2.mean(dim=(2,3),keepdim=True)
+                    
+                    compute_loss1 = loss_1 / (2*torch.exp(2*sigma_mean_1)) + sigma_mean_1 
+                    compute_loss2 = loss_2 / (2*torch.exp(2*sigma_mean_2)) + sigma_mean_2
+                    
+                    compute_loss = compute_loss1 + compute_loss2
                 else:
-                    compute_loss = loss           
+                    compute_loss = loss_1 + loss_2           
             
             compute_loss = compute_loss.mean()
 
@@ -256,12 +237,6 @@ def main(cfg:DictConfig):
                     
             model_engine.step() 
             
-            time += 1
-            time_step += 1
-            Replay_Buffer.add_buffer_20step(
-                outputs.detach().cpu().numpy(), time.detach().cpu().numpy(), time_step.detach().cpu().numpy(),
-                sigma=np.exp(sigma_mean.detach().cpu().numpy()) if hasattr(cfg.train,'uncertainty_finetune') and cfg.train.uncertainty_finetune else None
-                )
             
             r_step += 1
             if r_step % model_engine.gradient_accumulation_steps() == 0:
@@ -272,22 +247,31 @@ def main(cfg:DictConfig):
             
                 if wandb is not None and deepspeed_config.local_rank == 0 :
                     wandb.log({
-                        'train_loss': loss.detach().mean().item(),
+                        'loss_1': loss_1.detach().mean().item(),
+                        'loss_2': loss_2.detach().mean().item(),
                         'lr': optimizer.param_groups[0]['lr']
                     })
-                    if model.uncertainty_loss:
+                    if cfg.train.uncertainty_loss:
                         wandb.log({
                             # 'train_loss_sigma': torch.exp(sigma.item()),
-                            'computed_loss': compute_loss.item()
+                            'computed_loss_1': compute_loss1.detach().mean().item(),
+                            'computed_loss_2': compute_loss2.detach().mean().item(),
                         },commit=False)
-                        sigma_mean = torch.exp(sigma).mean(axis=(0,2,3))
+                        sigma_mean_1 = torch.exp(sigma_1).mean(axis=(0,2,3))
+                        sigma_mean_2 = torch.exp(sigma_2).mean(axis=(0,2,3))
                         upload = {
-                                'uncertainty/2m': sigma_mean[-1],
-                                'uncertainty/10v': sigma_mean[-2],
-                                'uncertainty/10u': sigma_mean[-3],
-                                'uncertainty/z500': sigma_mean[45],
-                                'uncertainty/t850': sigma_mean[10],
+                                'uncertainty_1/2m': sigma_mean_1[-1],
+                                'uncertainty_1/10v': sigma_mean_1[-2],
+                                'uncertainty_1/10u': sigma_mean_1[-3],
+                                'uncertainty_1/z500': sigma_mean_1[45],
+                                'uncertainty_1/t850': sigma_mean_1[10],
+                                'uncertainty_2/2m': sigma_mean_2[-1],
+                                'uncertainty_2/10v': sigma_mean_2[-2],
+                                'uncertainty_2/10u': sigma_mean_2[-3],
+                                'uncertainty_2/z500': sigma_mean_2[45],
+                                'uncertainty_2/t850': sigma_mean_2[10],
                             }
+                        
                         wandb.log(upload, commit=False)
                     if train_param.time_regularization:
                         raise NotImplementedError 

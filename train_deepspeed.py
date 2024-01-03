@@ -52,7 +52,7 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
         scheduler = None
 
     if valid_set is not None:
-        validloader = DataLoader(valid_set, batch_size=train_param.batch_size, shuffle=False, num_workers=8, prefetch_factor=8)
+        validloader = DataLoader(valid_set, **train_param.validate_dataloader)
     
     if hasattr(train_param,'restore_ression') and train_param.restore_session.yes is True:
         # Load model parameters
@@ -96,11 +96,11 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
             input = input.view(B, in_seq*C_in, H, W)
             target = target.view(B, out_seq*C_out, H, W)
             
-            if model.uncertainty_loss:
+            if train_param.uncertainty_loss:
                 outputs, sigma = model_engine(input,time_embed)
             else:
                 outputs = model_engine(input,time_embed)
-            
+                sigma = None
             loss = F.mse_loss(input=outputs, target=target, reduction='none')
 
             
@@ -117,10 +117,24 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                 raise NotImplementedError
                 compute_loss = loss + train_param.time_regularization_weight * loss_regularization
             else:
-                if train_param.meaning_uncertainty:
-                    sigma_mean = sigma.mean(dim=(2,3),keepdim=True)
-
-                compute_loss = loss / (2*torch.exp(2*sigma_mean)) + sigma_mean 
+                if sigma is None:
+                    compute_loss = loss
+                else:
+                    if train_param.meaning_uncertainty:
+                        use_sigma = sigma.mean(dim=(2,3),keepdim=True)
+                    else:
+                        use_sigma = sigma
+                        
+                    if train_param.em_uncertainty_training:
+                        if train_param.em_uncertainty_training.enable:
+                            if (epoch + 1) % train_param.em_uncertainty_training.uncertainty_graident_everyepoch == 0:
+                                loss = loss.detach()
+                                compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                            else:
+                                use_sigma = use_sigma.detach()
+                                compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                    else:            
+                        compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma 
             
             compute_loss = compute_loss.mean()
 
@@ -150,7 +164,7 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                 if wandb is not None and deepspeed_config.local_rank == 0 :
                     loss = loss.detach().mean(dim=(0,2,3))
                     log_info = {
-                        f'train_loss/{k}': torch.sqrt(loss[v].item()) * stds [v]
+                        f'train_loss/{k}': torch.sqrt(loss[v]).item() * stds [v]
                         for k,v in indices.items()
                     }
                     log_info ['train_loss']=loss.mean().item()
@@ -158,7 +172,9 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                     
                     wandb.log(log_info)
                     
-                    if model.uncertainty_loss:
+                    if train_param.uncertainty_loss:
+                        assert model.uncertainty_loss == True
+                        sigma_mean = sigma.mean(dim=(2,3),keepdim=True)
                         wandb.log({
                             'computed_loss': compute_loss.item()
                         },commit=False)
@@ -205,6 +221,7 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                                 for k,v in indices.items()
                             }
                             wandb.log(upload, commit=False)
+                        model.train()
 
                         
                         
