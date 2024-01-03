@@ -1,22 +1,19 @@
 model:
-  model_path: model.swin_unet #'dense' or 'conv', 'dense2' or 'conv2'
-  model_type: SwinTransformerSys
+  model_path: model.VIT #'dense' or 'conv', 'dense2' or 'conv2'
+  model_type: Model
   param: 
-    param: 
-    in_seq_length: 1
-    out_seq_length: 1
     input_dim: 68
     output_dim: 68
     lat_dim: 32
     lon_dim: 64 # above are input and output parameters
-    patch_size: 1
-    hidden_dim: 384
-    window_size: 4
-    drop_rate: 0.3
-    attn_drop_rate: 0.3
+    hidden_dim: 1024
+    patch_size: 2
+    n_heads: 16
+    num_layers: 8
+    mlp_ratio: 4 
+    drop_rate: 0.1
     ape: True
     uncertainty_loss: True
-
 
 data: 
   data_path : /dev/shm/store/checkpoint/original_dataset
@@ -29,62 +26,57 @@ data:
 
 train: 
   optimizer:
-    name: Adam
-    learning_rate: 1
-    weight_decay: 1e-5
     scheduler: 
-      name: CosineAnnealingLR
-      T_max: 87500
-      eta_min: 1.0e-8
-      warmup_steps: 1000
       # name: NoamLR
       # hidden_dim: 192
       # warmup_steps: 1000
+      name: CosineAnnealingLR
+      T_max: 87500
+      eta_min: 1.0e-8
+      warmup_steps: 2500
   n_epochs: 200  
   ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint
-  device: cuda:0
-  autoregressive: True
-  validate_step : 500
-  # time_regularization: True
+  validate_step : 2000
+  validate_dataloader:
+    batch_size: 64
+    num_workers: 16
+    prefetch_factor: 16
+    shuffle: False
+  uncertainty_loss: True
+  em_uncertainty_training: 
+    enable: True
+    uncertainty_graident_everyepoch: 10
   time_regularization: False
   time_regularization_weight: 1
-  meaning_uncertainty: True
+  meaning_uncertainty: False
 
-  batch_size: 64
+  
 
   restore_session:
     yes: False
     load_dir: checkpoint
     ckpt_id: 200
 
-  dataloader:
-    num_workers: 32
-    batch_size: 64
-    prefetch_factor: 32
-
-  deepspeed_config: ./cfgs/deepspeed.json
-
   deepspeed_config_yaml:
     train_batch_size: 128
-    train_micro_batch_size_per_gpu: 32
+    train_micro_batch_size_per_gpu: 128  
     optimizer:
       type: Adam
       params:
-        lr: 1.0e-4
-        weight_decay: 0
+        lr: 5.0e-4
+        weight_decay: 1.0e-5
+        betas: [0.9, 0.95]
     zero_optimization:
       stage: 0
-      
-    gradient_clipping: 5
+    # gradient_clipping: 5
     data_efficiency:
       data_sampling:
         enabled: true
         num_workers: 16
         prefetch_factor: 8
-
-logger: #default wandb
-    project: weather-forecast-deepspeed
-    name: swin-run-384-patch1-meanuncertainty_loss-clipping5
+logger: 
+  project: weather-forecast-deepspeed
+  name: VIT-climax-uncertain-EM
 
 seed: 114514
 

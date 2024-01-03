@@ -1,34 +1,5 @@
 model:
   model_path: model.swin_unet_multivariable #'dense' or 'conv', 'dense2' or 'conv2'    
-  model_type: Model
-  param: 
-    lat_dim: 32
-    lon_dim: 64 # above are input and output parameters
-    hidden_dim: 384
-    ape: True
-    patch_size: [1,1,1]
-    fusion_layers: [4,4,4]
-    fusion_window_size: [4,8,1]
-    fusion_hidden_size: [384,768,1536]
-    # fusion_hidden_size: [768,1536,3072]
-    time_embed: True
-    varialbe_fusion: False
-    variable_dict:
-      temperature: 68
-      # v_component_of_wind: 13
-      # specific_humidity: 13
-      # geopotential: 13
-      # u_component_of_wind: 13
-      # surface_variable: 3
-    # variable_down: [68,43,28]
-    variable_order:
-      - temperature
-      # - v_component_of_wind
-      # - specific_humidity
-      # - geopotential
-      # - u_component_of_wind
-      # - surface_variable
-    uncertainty_loss: True
 
 data: 
   data_path : /dev/shm/store/checkpoint/original_dataset
@@ -36,17 +7,17 @@ data:
   # buffer_folder: /home/gaoziyi/weather/finetune-buffer
   large_buffer_folder: /home/gaoziyi/weather/finetune-buffer
   buffer_folder: /dev/shm/store/buffer
-  buffer_size: 2000
-  epoch_size: 6400
+  # buffer_size: 2000
+  # epoch_size: 6400
   shape: [58436, 68, 32, 64]
   preload_to_memory: False
   augment: False
   train_range: [0,56000]
   val_range: [56000,58436]
-  sample: 
-    name: yl
-    n: 10
-    T_max: 200
+  # sample: 
+  #   name: yl
+  #   n: 10
+  #   T_max: 200
 
 
 finetune: 
@@ -98,8 +69,8 @@ train:
 
 
 logger: #default wandb
-   project: fengwu-finetune
-   name: singlevariable-384-patch1-meaninguncertainty-4-clipping_step_86000_yl_2e-6-fix-uncertaintyfinetune
+   project: fourcastnet-finetune
+   name: VIT
 
 seed: 114514
 

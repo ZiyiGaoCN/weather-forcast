@@ -4,34 +4,33 @@ model:
   param: 
     lat_dim: 32
     lon_dim: 64 # above are input and output parameters
-    hidden_dim: 96
+    hidden_dim: 384
     ape: True
     patch_size: [1,1,1]
-    fusion_layers: [12,12,12]
-    fusion_window_size: [4,8,6]
-    # fusion_hidden_size: [96,192,384]
-    fusion_hidden_size: [96,192,384]
+    fusion_layers: [4,4,4]
+    fusion_window_size: [4,8,1]
+    fusion_hidden_size: [384,768,1536]
     # fusion_hidden_size: [768,1536,3072]
     time_embed: True
+    varialbe_fusion: False
     variable_dict:
-      temperature: 13
-      v_component_of_wind: 13
-      specific_humidity: 13
-      geopotential: 13
-      u_component_of_wind: 13
-      surface_variable: 3
-    variable_down: [68,43,28]
+      temperature: 68
+      # v_component_of_wind: 13
+      # specific_humidity: 13
+      # geopotential: 13
+      # u_component_of_wind: 13
+      # surface_variable: 3
+    # variable_down: [68,43,28]
     variable_order:
       - temperature
-      - v_component_of_wind
-      - specific_humidity
-      - geopotential
-      - u_component_of_wind
-      - surface_variable
-    variable_fusion: False
+      # - v_component_of_wind
+      # - specific_humidity
+      # - geopotential
+      # - u_component_of_wind
+      # - surface_variable
     uncertainty_loss: True
     drop_rate: 0.5
-    attn_drop_rate: 0.5
+    attn_drop: 0.5
 
 
 data: 
@@ -65,6 +64,7 @@ train:
   time_regularization: False
   time_regularization_weight: 1
   meaning_uncertainty: True
+  gradient_clip: 5.0
 
   batch_size: 64
 
@@ -95,9 +95,11 @@ train:
         enabled: true
         num_workers: 16
         prefetch_factor: 8
-logger: 
+
+
+logger: #default wandb
     project: weather-forecast-deepspeed
-    name: multivarible-swin-96-patch1-dropout0.5
+    name: singlevariable-384-patch1-meaninguncertainty-4-clipping1-dropout0.5
 
 seed: 114514
 

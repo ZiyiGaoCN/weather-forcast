@@ -1,38 +1,17 @@
 model:
-  model_path: model.swin_unet_multivariable #'dense' or 'conv', 'dense2' or 'conv2'
-  model_type: Model
+  model_path: model.afnonet #'dense' or 'conv', 'dense2' or 'conv2'
+  model_type: AFNONet
   param: 
-    lat_dim: 32
-    lon_dim: 64 # above are input and output parameters
-    hidden_dim: 96
-    ape: True
-    patch_size: [1,1,1]
-    fusion_layers: [12,12,12]
-    fusion_window_size: [4,8,6]
-    # fusion_hidden_size: [96,192,384]
-    fusion_hidden_size: [96,192,384]
-    # fusion_hidden_size: [768,1536,3072]
-    time_embed: True
-    variable_dict:
-      temperature: 13
-      v_component_of_wind: 13
-      specific_humidity: 13
-      geopotential: 13
-      u_component_of_wind: 13
-      surface_variable: 3
-    variable_down: [68,43,28]
-    variable_order:
-      - temperature
-      - v_component_of_wind
-      - specific_humidity
-      - geopotential
-      - u_component_of_wind
-      - surface_variable
-    variable_fusion: False
+    img_size: [32,64]
+    patch_size: 1
+    in_chans: 68
+    out_chans: 68
+    embed_dim: 384
+    mlp_ratio: 4
+    # drop_rate: 0.3
+    # attn_drop_rate: 0.3
+    # ape: True
     uncertainty_loss: True
-    drop_rate: 0.5
-    attn_drop_rate: 0.5
-
 
 data: 
   data_path : /dev/shm/store/checkpoint/original_dataset
@@ -64,7 +43,7 @@ train:
   # time_regularization: True
   time_regularization: False
   time_regularization_weight: 1
-  meaning_uncertainty: True
+  meaning_uncertainty: False
 
   batch_size: 64
 
@@ -81,15 +60,16 @@ train:
   deepspeed_config: ./cfgs/deepspeed.json
   deepspeed_config_yaml:
     train_batch_size: 128
-    train_micro_batch_size_per_gpu: 32  
+    train_micro_batch_size_per_gpu: 128  
     optimizer:
-      type: Adam
+      type: AdamW
       params:
         lr: 1.0e-4
-        weight_decay: 0
+        weight_decay: 0.1
+        betas: [0.9,0.95]
     zero_optimization:
       stage: 0
-    gradient_clipping: 5
+    # gradient_clipping: 5
     data_efficiency:
       data_sampling:
         enabled: true
@@ -97,12 +77,10 @@ train:
         prefetch_factor: 8
 logger: 
     project: weather-forecast-deepspeed
-    name: multivarible-swin-96-patch1-dropout0.5
+    name: AFNO-uncertain
 
 seed: 114514
 
 hydra:
   run:
     dir: null
-
-    
