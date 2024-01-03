@@ -175,7 +175,7 @@ class SwinTransformerBlock(nn.Module):
         norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
     """
 
-    def __init__(self, dim, input_resolution, num_heads, window_size=7, shift_size=0,
+    def __init__(self, dim, input_resolution, num_heads, window_size=2, shift_size=0,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
                  act_layer=nn.GELU, norm_layer=nn.LayerNorm):
         super().__init__()
@@ -203,24 +203,25 @@ class SwinTransformerBlock(nn.Module):
 
         if self.shift_size > 0:
             # calculate attention mask for SW-MSA
-            H, W = self.input_resolution
-            img_mask = torch.zeros((1, H, W, 1))  # 1 H W 1
-            h_slices = (slice(0, -self.window_size),
-                        slice(-self.window_size, -self.shift_size),
-                        slice(-self.shift_size, None))
-            w_slices = (slice(0, -self.window_size),
-                        slice(-self.window_size, -self.shift_size),
-                        slice(-self.shift_size, None))
-            cnt = 0
-            for h in h_slices:
-                for w in w_slices:
-                    img_mask[:, h, w, :] = cnt
-                    cnt += 1
+            # H, W = self.input_resolution
+            # img_mask = torch.zeros((1, H, W, 1))  # 1 H W 1
+            # h_slices = (slice(0, -self.window_size),
+            #             slice(-self.window_size, -self.shift_size),
+            #             slice(-self.shift_size, None))
+            # w_slices = (slice(0, -self.window_size),
+            #             slice(-self.window_size, -self.shift_size),
+            #             slice(-self.shift_size, None))
+            # cnt = 0
+            # for h in h_slices:
+            #     for w in w_slices:
+            #         img_mask[:, h, w, :] = cnt
+            #         cnt += 1
 
-            mask_windows = window_partition(img_mask, self.window_size)  # nW, window_size, window_size, 1
-            mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
-            attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
-            attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
+            # mask_windows = window_partition(img_mask, self.window_size)  # nW, window_size, window_size, 1
+            # mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
+            # attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
+            # attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
+            attn_mask = None
         else:
             attn_mask = None
 
@@ -357,7 +358,8 @@ class PatchExpand(nn.Module):
         return x
 
 class FinalPatchExpand_X4(nn.Module):
-    def __init__(self, input_resolution, dim, dim_scale=4, norm_layer=nn.LayerNorm,extra_dim=1):
+    def __init__(self, input_resolution, dim, dim_scale=4, norm_layer=nn.LayerNorm,extra_dim=1,
+                 activation=nn.Tanh):
         super().__init__()
         self.input_resolution = input_resolution
         self.dim = dim
@@ -366,6 +368,7 @@ class FinalPatchExpand_X4(nn.Module):
         self.conv2d = nn.ConvTranspose2d(in_channels=dim, out_channels=dim, kernel_size=dim_scale+extra_dim, stride=dim_scale, output_padding=0,bias=False) 
         self.output_dim = dim 
         self.norm = norm_layer(self.output_dim)
+        self.activa = activation()
 
     def forward(self, x):
         """
@@ -379,6 +382,7 @@ class FinalPatchExpand_X4(nn.Module):
         x = x.view(B, H, W, C)
         x = x.permute(0,3,1,2)
         x = self.conv2d(x)
+        x = self.activa(x)
         x = x.permute(0,2,3,1)
         x = x.view(B,-1,self.output_dim)
         # x = rearrange(x, 'b h w (p1 p2 c)-> b (h p1) (w p2) c', p1=self.dim_scale, p2=self.dim_scale, c=C//(self.dim_scale**2))
@@ -525,9 +529,17 @@ class PatchEmbed(nn.Module):
         norm_layer (nn.Module, optional): Normalization layer. Default: None
     """
 
-    def __init__(self, img_size=224, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None , extra_dim=1):
+    def __init__(self, 
+                 lat_dim=161,
+                 lon_dim=161,
+                #  img_size=224, 
+                 patch_size=4, 
+                 in_chans=3, 
+                 embed_dim=96, 
+                 norm_layer=None , 
+                 extra_dim=1):
         super().__init__()
-        img_size = to_2tuple(img_size)
+        img_size = (lat_dim,lon_dim)
         patch_size = to_2tuple(patch_size)
         patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]
         self.img_size = img_size
@@ -549,7 +561,7 @@ class PatchEmbed(nn.Module):
         # FIXME look at relaxing size constraints
         assert H == self.img_size[0] and W == self.img_size[1], \
             f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
-        x = self.proj(x).flatten(2).transpose(1, 2)  # B Ph*Pw C
+        x = self.proj(x).flatten(2).transpose(1, 2)  # (B,Ph*Pw,C)
         if self.norm is not None:
             x = self.norm(x)
         return x
@@ -562,7 +574,7 @@ class PatchEmbed(nn.Module):
         return flops
 
 
-class VIT(nn.Module):
+class SwinTransformerSys(nn.Module):
     r""" Swin Transformer
         A PyTorch impl of : `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows`  -
           https://arxiv.org/pdf/2103.14030
@@ -589,23 +601,24 @@ class VIT(nn.Module):
     """
 
     def __init__(self, 
+                 lat_dim=32,
+                 lon_dim=64,
                  in_seq_length=2,
-                 out_seq_length=20,
+                 out_seq_length=1,
                  input_dim=70,
-                 output_dim=5,
-                 lat_dim=161,
-                 lon_dim=161,
-                 patch_size=4, 
+                 output_dim=70,
+                 patch_size=2, 
                  hidden_dim=96, depths=[2, 2, 2, 2], depths_decoder=[1, 2, 2, 2], num_heads=[3, 6, 12, 24],
-                 window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
+                 window_size=2, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
                  use_checkpoint=False, final_upsample="expand_first", 
-                 extra_dim=1, **kwargs):
+                 extra_dim=0, **kwargs):
         super().__init__()
 
         # print("SwinTransformerSys expand initial----depths:{};depths_decoder:{};drop_path_rate:{};num_classes:{}".format(depths,
         # depths_decoder,drop_path_rate,num_classes))
+        self.in_seq_length = in_seq_length
         self.lat_dim = lat_dim
         self.lon_dim = lon_dim
         self.in_chans = in_seq_length * input_dim
@@ -614,18 +627,19 @@ class VIT(nn.Module):
         self.hidden_dim = hidden_dim
         self.ape = ape
         self.patch_norm = patch_norm
-        self.num_features = int(self.hidden_dim )
+        self.num_features = int(self.hidden_dim * 2 ** (self.num_layers - 1)) # 96, 192, 384, 768
         self.num_features_up = int(self.hidden_dim * 2)
         self.mlp_ratio = mlp_ratio
         self.final_upsample = final_upsample
         self.extra_dim = extra_dim
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
-            img_size=self.lat_dim, patch_size=patch_size, in_chans=self.in_chans, embed_dim=self.hidden_dim,
+            lat_dim=self.lat_dim,
+            lon_dim=self.lon_dim, patch_size=patch_size, in_chans=self.in_chans, embed_dim=self.hidden_dim,
             norm_layer=norm_layer if self.patch_norm else None,
             extra_dim=self.extra_dim)
-        num_patches = self.patch_embed.num_patches
-        patches_resolution = self.patch_embed.patches_resolution
+        num_patches = self.patch_embed.num_patches # 32*64/2/2 = 32*64/4 = 512 = 16*32 
+        patches_resolution = self.patch_embed.patches_resolution 
         self.patches_resolution = patches_resolution
 
         # absolute position embedding
@@ -641,18 +655,18 @@ class VIT(nn.Module):
         # build encoder and bottleneck layers
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
-            layer = BasicLayer(dim=int(self.hidden_dim),
-                               input_resolution=(patches_resolution[0] ,
-                                                 patches_resolution[1] ),
-                               depth=depths[i_layer],
-                               num_heads=num_heads[i_layer],
-                               window_size=window_size,
-                               mlp_ratio=self.mlp_ratio,
-                               qkv_bias=qkv_bias, qk_scale=qk_scale,
+            layer = BasicLayer(dim=int(self.hidden_dim * 2 ** i_layer),
+                               input_resolution=(patches_resolution[0] // (2 ** i_layer), # 16, 8, 4, 2
+                                                 patches_resolution[1] // (2 ** i_layer)),
+                               depth=depths[i_layer], # 2, 2, 2, 2
+                               num_heads=num_heads[i_layer], # 3, 6, 12, 24
+                               window_size=window_size, # 7
+                               mlp_ratio=self.mlp_ratio, # 4
+                               qkv_bias=qkv_bias, qk_scale=qk_scale, # True, None
                                drop=drop_rate, attn_drop=attn_drop_rate,
-                               drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
-                               norm_layer=norm_layer,
-                               downsample=None,
+                               drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])], 
+                               norm_layer=norm_layer, # LayerNorm
+                               downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
                                use_checkpoint=use_checkpoint)
             self.layers.append(layer)
         
@@ -687,7 +701,7 @@ class VIT(nn.Module):
 
         if self.final_upsample == "expand_first":
             print("---final upsample expand_first---")
-            self.up = FinalPatchExpand_X4(input_resolution=(self.lat_dim//patch_size,self.lon_dim//patch_size),dim_scale=4,dim=self.hidden_dim,extra_dim=1)
+            self.up = FinalPatchExpand_X4(input_resolution=(self.lat_dim//patch_size,self.lon_dim//patch_size),dim_scale=patch_size,dim=self.hidden_dim,extra_dim=extra_dim)
             self.output = nn.Conv2d(in_channels=self.hidden_dim,out_channels=self.out_chans,kernel_size=1,bias=False)
 
         self.apply(self._init_weights)
@@ -711,18 +725,19 @@ class VIT(nn.Module):
 
     #Encoder and Bottleneck
     def forward_features(self, x):
-        x = self.patch_embed(x)
+        x = self.patch_embed(x) # [B, ]
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
-        # x_downsample = []
+        x_downsample = []
 
         for layer in self.layers:
-            # x_downsample.append(x)
+            x_downsample.append(x)
             x = layer(x)
+
         x = self.norm(x)  # B L C
-        
-        return x #, x_downsample
+  
+        return x, x_downsample
 
     #Dencoder and Skip connection
     def forward_up_features(self, x, x_downsample):
@@ -755,30 +770,116 @@ class VIT(nn.Module):
         return x
 
     def forward(self, x):
-        x= self.forward_features(x)
-        # x = self.forward_up_features(x,x_downsample)
+        x, x_downsample = self.forward_features(x)
+        x = self.forward_up_features(x,x_downsample)
         x = self.up_x4(x)
 
         return x
 
-    
+    def flops(self):
+        flops = 0
+        flops += self.patch_embed.flops()
+        for i, layer in enumerate(self.layers):
+            flops += layer.flops()
+        flops += self.num_features * self.patches_resolution[0] * self.patches_resolution[1] // (2 ** self.num_layers)
+        flops += self.num_features * self.out_chans
+        return flops
+
+
+from .layers.SelfAttention_Family import FullAttention, AttentionLayer
+from .layers.Embed import DataEmbedding_inverted,DataEmbedding
+from .layers.Transformer_EncDec import Encoder, EncoderLayer
+
+class Model(nn.Module):
+    def __init__(self, 
+                 lat_dim=32,
+                 lon_dim=64,
+                 input_dim=68,
+                 output_dim=68,
+                 patch_size=2, 
+                 hidden_dim=96, depths=[2, 2, 2, 2], depths_decoder=[1, 2, 2, 2], num_heads=[3, 6, 12, 24],
+                 num_layers=12,n_heads=6,
+                 window_size=2, mlp_ratio=4., qkv_bias=True, qk_scale=None,
+                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
+                 norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
+                 use_checkpoint=False, final_upsample="expand_first", 
+                 uncertainty_loss=False,
+                 time_embed=False,
+                 extra_dim=0, **kwargs):
+        super().__init__()
+
+        self.lat_dim = lat_dim
+        self.lon_dim = lon_dim
+        self.in_chans = input_dim
+        self.out_chans = output_dim
+        self.hidden_dim = hidden_dim
+        self.ape = ape
+        self.uncertainty_loss = uncertainty_loss
+
+        self.extra_dim = extra_dim
+        
+        self.patch_norm = patch_norm
+
+        self.patch_embed = self.patch_embed = PatchEmbed(
+            lat_dim=self.lat_dim, lon_dim=self.lon_dim,
+            patch_size=patch_size, in_chans=self.in_chans, embed_dim=self.hidden_dim,
+            norm_layer=norm_layer if self.patch_norm else None,
+            extra_dim=self.extra_dim)
+        
+        self.time_embed = time_embed
+        if self.time_embed:
+            raise NotImplementedError
+        
+        
+        num_patches = self.patch_embed.num_patches # 32*64/2/2 = 32*64/4 = 512 = 16*32
+        if self.ape:
+            self.absolute_pos_embed = nn.Parameter(torch.zeros(1, num_patches, self.hidden_dim))
+            trunc_normal_(self.absolute_pos_embed, std=.02)
+        
+        self.encoder = Encoder(
+            [
+                EncoderLayer(
+                    AttentionLayer(
+                        FullAttention(False, factor=None, attention_dropout=attn_drop_rate,
+                                      output_attention=None), hidden_dim, n_heads=n_heads),
+                    d_model=hidden_dim,
+                    d_ff=int(hidden_dim*mlp_ratio),
+                    dropout=drop_rate,
+                    activation="gelu"
+                ) for l in range(num_layers)
+            ],
+            norm_layer=torch.nn.LayerNorm(hidden_dim)
+        )
+        self.up = FinalPatchExpand_X4(
+            input_resolution=(self.lat_dim//patch_size,self.lon_dim//patch_size),
+            dim_scale=patch_size,dim=self.hidden_dim,
+            extra_dim=extra_dim)
+        self.output = nn.Conv2d(in_channels=self.hidden_dim,out_channels=self.out_chans,kernel_size=1,bias=False)
+        if self.uncertainty_loss:
+            self.sigma_output = nn.Conv2d(in_channels=self.hidden_dim,out_channels=self.out_chans,kernel_size=1,bias=False)
+            # trunc_normal_(self.sigma_output.weight, std=.02)
+            torch.nn.init.zeros_(self.sigma_output.weight)
+
+    def forward(self, x, step):
+        # [B, C, H, W]
+        x = self.patch_embed(x) # [B, Ph*Pw, C] 
+        if self.ape:
+            x = x + self.absolute_pos_embed
+        x , _ = self.encoder(x) # [B, Ph*Pw, C]
+        x = self.up(x) # [B, H*W ,C]
+        x = x.permute(0,2,1).contiguous() 
+        x = x.view(x.shape[0],self.hidden_dim,self.lat_dim,self.lon_dim) # [B,C,H,W]
+        if self.uncertainty_loss:
+            return self.output(x), self.sigma_output(x)
+        x = self.output(x) # [B, H*W, C]
+        
+        return x
+
+
 if __name__ == '__main__':
     pass
     import torch
-    input = torch.randn(1,3,161,161)
-
-    # 2x5x14x161x161 
-    # 192x40x40
-    
-
-    network = VIT(in_seq_length=1,
-                 out_seq_length=20,
-                 input_dim=3,
-                 output_dim=5,
-                 lat_dim=161,
-                 lon_dim=161,
-                 patch_size=4,
-                 window_size=40
-                )
+    input = torch.randn(1,112,32,64)
+    network = Model(window_size=2)
     output = network(input)
     print(output.shape)
