@@ -1,0 +1,98 @@
+model:
+  model_path: torch_harmonics.examples.sfno #'dense' or 'conv', 'dense2' or 'conv2'
+  model_type: SphericalFourierNeuralOperatorNet
+  param: 
+    spectral_transform: sht 
+    operator_type: driscoll-healy
+    img_size: [32, 64]
+    grid: "equiangular"
+    encoder_layers: 2
+    num_layers: 8
+    scale_factor: 1
+    embed_dim: 768
+    big_skip: True
+    pos_embed: "latlon"
+    use_mlp: True
+    normalization_layer: layer_norm
+    in_chans: 68
+    out_chans: 68
+    mlp_ratio: 4
+    uncertainty_loss: True
+
+data: 
+  data_path : /dev/shm/store/checkpoint/original_dataset
+  npy_name: /dev/shm/store/original_dataset/dataset.npy
+  shape: [58436, 68, 32, 64]
+  preload_to_memory: False
+  augment: False
+  input_step: 1
+  train_range: [0,56000]
+  val_range: [56000,58436]
+
+train: 
+  optimizer:
+    name: Adam
+    learning_rate: 1
+    weight_decay: 1e-5
+    scheduler: 
+      # name: NoamLR
+      # hidden_dim: 192
+      # warmup_steps: 1000
+      name: CosineAnnealingLR
+      T_max: 87500
+      eta_min: 1.0e-8
+      warmup_steps: 1000
+  n_epochs: 200  
+  ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint
+  device: cuda:0
+  validate_step : 2000
+  validate_dataloader:
+    batch_size: 64
+    num_workers: 16
+    prefetch_factor: 16
+    shuffle: False
+  # time_regularization: True
+  loss_weights_gc: True
+  uncertainty_loss: True
+  em_uncertainty_training: 
+    enable: False
+    uncertainty_graident_everyepoch: 10
+  time_regularization: False
+  time_regularization_weight: 1
+  meaning_uncertainty: False
+
+  batch_size: 64
+
+  restore_session:
+    yes: False
+    load_dir: checkpoint
+    ckpt_id: 200
+
+  dataloader:
+    num_workers: 32
+    batch_size: 64
+    prefetch_factor: 32
+
+  deepspeed_config: ./cfgs/deepspeed.json
+  deepspeed_config_yaml:
+    train_batch_size: 32
+    train_micro_batch_size_per_gpu: 32  
+    optimizer:
+      type: AdamW
+      params:
+        lr: 1.0e-4
+        weight_decay: 0.1
+        betas: [0.9,0.95]
+    zero_optimization:
+      stage: 0
+    # gradient_clipping: 5
+    data_efficiency:
+      data_sampling:
+        enabled: true
+        num_workers: 16
+        prefetch_factor: 8
+logger: 
+    project: weather-forecast-deepspeed
+    name: SFNO-uncertain
+
+seed: 114514
