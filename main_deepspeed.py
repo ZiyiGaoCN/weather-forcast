@@ -53,6 +53,8 @@ def main(cfg:DictConfig):
     
     model = initial_model(cfg.model)
 
+    loguru.logger.info(model)
+
     if hasattr(cfg,'logger') and cfg.deepspeed.local_rank == 0:
         config = OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=True

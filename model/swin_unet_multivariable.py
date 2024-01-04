@@ -1049,7 +1049,7 @@ class SwinTransformerBlock_3D(nn.Module):
     def forward(self, x , timestep_embedding=None):
         H0, W0, Z0 = self.input_resolution
         B, H, W, Z, C = x.shape
-        assert H == H0 and W == W0 and Z == Z0, "input feature has wrong size"
+        assert H == H0 and W == W0 and Z == Z0, f"input feature has wrong size,{H,W,Z},{H0,W0,Z0}"
 
         x = x.view(B, H*W*Z, C)
         if self.time_embed:
@@ -1293,6 +1293,8 @@ class Decoder(nn.Module):
                     drop_path_rate = 0.1,
                     mlp_ratio = 4,
                     uncertainty_loss = False,
+                    varmin = -5,
+                    varmax = 5, 
                     **kwargs):
         super().__init__()
 
@@ -1301,7 +1303,8 @@ class Decoder(nn.Module):
              int(lon_dim*(2**i)),
              int((z_dim-1)*(2**i)+1))
              for i in range(len(depths))]
-
+        self.varmin = varmin
+        self.varmax = varmax
         self.hidden_dim = hidden_dim
 
         self.pos_drop = nn.Dropout(p=0.0)
@@ -1319,6 +1322,7 @@ class Decoder(nn.Module):
             self.final_up_uncertainty = nn.ConvTranspose3d(hidden_dim, out_dim, kernel_size=patch_size,
                                             stride=patch_size, padding=0, output_padding=0, groups=1, bias=False, dilation=1, padding_mode='zeros')
             trunc_normal_(self.final_up_uncertainty.weight, std=.02)
+            
         self.concat_back_dim = nn.ModuleList()
         self.norm = norm_layer(hidden_dim)
 
@@ -1338,13 +1342,13 @@ class Decoder(nn.Module):
             self.layers.append(layer)
             self.concat_back_dim.append(nn.Linear(int(self.hidden_dim * 2 ** (self.num_layers-i_layer),),int(self.hidden_dim * 2 ** (self.num_layers-i_layer-1)),bias=False))
     def forward(self, x_downsample):
+        total = len(x_downsample)
         for inx, layer_up in enumerate(self.layers):
             if inx == 0:
-                x = layer_up(x_downsample[2-inx])
+                x = layer_up(x_downsample[total-1-inx])
             else:
-                
                 x = layer_up(x)
-            x = torch.cat([x,x_downsample[2-inx-1]],-1)
+            x = torch.cat([x,x_downsample[total-1-inx-1]],-1)
             x = self.concat_back_dim[inx](x)
 
         x = self.norm(x)  # B L C
@@ -1354,7 +1358,24 @@ class Decoder(nn.Module):
         x = self.norm(x)
         x = x.view(B, H*W*Z, C).permute(0,2,1).contiguous().view(B,C,H,W,Z)
         if self.uncertainty_loss:
-            return self.final_up(x) , self.final_up_uncertainty(x)
+            mean = self.final_up(x)
+            
+            logvar = self.final_up_uncertainty(x)
+
+            varmax_ = self.varmax * torch.ones_like(logvar) 
+            varmin_ = self.varmin * torch.ones_like(logvar)
+            varmax_ = varmax_.to(logvar.device)
+            varmin_ = varmin_.to(logvar.device)        
+
+
+            # TODO: to utils
+            def compute_uncertain_loss(logvar,varmin,varmax):
+                logvar = varmax - nn.functional.softplus(varmax - logvar)
+                logvar = varmin + nn.functional.softplus(varmin - logvar)
+                return logvar
+                
+
+            return self.final_up(x) , compute_uncertain_loss(logvar,varmin_,varmax_)
         
         x = self.final_up(x)
         
@@ -1378,7 +1399,7 @@ class Fusion(nn.Module):
                  out_chans=96,
                  num_layers = 4,
                  norm_layer=nn.LayerNorm, 
-                 num_heads=3,
+                 num_heads=[4,8],
                  mlp_ratio=4,
                  qk_scale=None,
                  qkv_bias=True,
@@ -1411,27 +1432,41 @@ class Fusion(nn.Module):
                 nn.Linear(embed_dim, embed_dim),
             )
         
-        self.layers = nn.ModuleList([
-            SwinTransformerBlock_3D(dim=embed_dim, input_resolution=img_size,
-                                 num_heads=num_heads, window_size=(window_size[0],window_size[1],1),
-                                 shift_size=(0,0,0) if ((i//2) % 2 == 0) else (window_size[0] // 2,window_size[1] // 2,0),
-                                 mlp_ratio=mlp_ratio,
-                                 qkv_bias=qkv_bias, qk_scale=qk_scale,
-                                 drop=drop_rate, attn_drop=attn_drop,
-                                 norm_layer=norm_layer,
-                                 padding_z=(0,0),
-                                 no_relative_z=True)
-            if i % 2 ==0 or self.variable_fusion else
-            SwinTransformerBlock_3D(dim=embed_dim, input_resolution=img_size,
-                                    num_heads=num_heads, window_size=(1,1,window_size[2]),
-                                    shift_size=(0,0,0),
+        if self.variable_fusion:
+            self.layers = nn.ModuleList([
+                SwinTransformerBlock_3D(dim=embed_dim, input_resolution=img_size,
+                                    num_heads=num_heads, window_size=(window_size[0],window_size[1],1),
+                                    shift_size=(0,0,0) if ((i//2) % 2 == 0) else (window_size[0] // 2,window_size[1] // 2,0),
                                     mlp_ratio=mlp_ratio,
                                     qkv_bias=qkv_bias, qk_scale=qk_scale,
                                     drop=drop_rate, attn_drop=attn_drop,
                                     norm_layer=norm_layer,
                                     padding_z=(0,0),
                                     no_relative_z=True)
-            for i in range(num_layers)])
+                if i % 2 ==0 else
+                SwinTransformerBlock_3D(dim=embed_dim, input_resolution=img_size,
+                                        num_heads=num_heads, window_size=(1,1,window_size[2]),
+                                        shift_size=(0,0,0),
+                                        mlp_ratio=mlp_ratio,
+                                        qkv_bias=qkv_bias, qk_scale=qk_scale,
+                                        drop=drop_rate, attn_drop=attn_drop,
+                                        norm_layer=norm_layer,
+                                        padding_z=(0,0),
+                                        no_relative_z=True)
+                for i in range(num_layers)])
+        else:
+            self.layers = nn.ModuleList([
+                SwinTransformerBlock_3D(dim=embed_dim, input_resolution=img_size,
+                                    num_heads=num_heads, window_size=(window_size[0],window_size[1],1),
+                                    shift_size=(0,0,0) if (i % 2 == 0) else (window_size[0] // 2,window_size[1] // 2,0),
+                                    mlp_ratio=mlp_ratio,
+                                    qkv_bias=qkv_bias, qk_scale=qk_scale,
+                                    drop=drop_rate, attn_drop=attn_drop,
+                                    norm_layer=norm_layer,
+                                    padding_z=(0,0),
+                                    no_relative_z=True) 
+                                    for i in range(num_layers)])
+            
         
 
     def forward(self, x, timestep = None):
@@ -1484,6 +1519,8 @@ class Model(nn.Module):
                     drop_path_rate = 0.1,
                     mlp_ratio = 4,
                     uncertainty_loss = False,
+                    varmin = -5,
+                    varmax = 5,
                     **kwargs):
         super().__init__()
         self.variable_dict = variable_dict
@@ -1495,6 +1532,7 @@ class Model(nn.Module):
             for i in range(3)
         ]
         self.uncertainty_loss = uncertainty_loss 
+        self.scale_lens = len(depths)+1
         # if self.uncertainty_loss:
             # #TODO
             # raise NotImplementedError
@@ -1536,7 +1574,7 @@ class Model(nn.Module):
                 embed_dim=fusion_hidden_size[i],
                 out_chans=hidden_dim*int(2**(i)), 
                 num_layers = fusion_layers[i],
-                num_heads=3*int(2**i),
+                num_heads=num_heads[i],
                 mlp_ratio=4,
                 qk_scale=None,
                 qkv_bias=True,
@@ -1544,7 +1582,7 @@ class Model(nn.Module):
                 attn_drop=0.0,
                 time_embed = time_embed,
                 variable_fusion=variable_fusion
-            ) for i in range(3)
+            ) for i in range(2)
         ])
         self.decoders = nn.ModuleDict({
             k: Decoder(
@@ -1564,7 +1602,9 @@ class Model(nn.Module):
                 attn_drop_rate = attn_drop_rate,
                 drop_path_rate = drop_path_rate,
                 mlp_ratio = mlp_ratio,
-                uncertainty_loss=uncertainty_loss
+                uncertainty_loss=uncertainty_loss,
+                varmin = varmin,
+                varmax = varmax 
             )
             for k,v in variable_dict.items()
         })
@@ -1575,19 +1615,19 @@ class Model(nn.Module):
         acc = 0
         for k in self.variable_order:
             v = self.variable_dict[k]
-            x_varibles[k] = self.encoders[k](x[:,:,:,:,slice(acc,acc+v)]) # [B,32,64,1,13] in [B,32,64,1,96] out
+            x_varibles[k] = self.encoders[k](x[:,:,:,:,slice(acc,acc+v)]) 
             acc+=v
         x_downsample = [
             torch.cat([x_varibles[k][i] for k in self.variable_order],dim=-2)
-            for i in range(3)
+            for i in range(self.scale_lens)
         ]
         for i,fusion in enumerate(self.fusions):
             x_downsample[i]=fusion(x_downsample[i],timestep)
             
-        for i in range(3):
+        for i in range(2):
             x_downsample[i] = torch.split(x_downsample[i],[1 for _ in self.variable_order],dim=-2)
         x_upsample_varibles = {
-            k: [x_downsample[i][kk].contiguous() for i in range(3)]
+            k: [x_downsample[i][kk].contiguous() for i in range(2)]
             for kk,k in enumerate(self.variable_order)
         }
         final = {}
@@ -1653,13 +1693,18 @@ if __name__ == '__main__':
         patch_size=(1,1,1),
         time_embed=True,
         window_size=(4,4,1),
+        hidden_dim=1024,    
+        fusion_hidden_size=[1024,2048],
+        variable_fusion=False,
+        num_heads=[4,8],
+        depths=[2],
         variable_dict={
         "v1":13,
-        "v2":13,
-        "v3":13,
-        "v4":13,
-        "v5":13,
-        "v6":8,   
+        # "v2":13,
+        # "v3":13,
+        # "v4":13,
+        # "v5":13,
+        # "v6":8,   
         # "v1":(0,13),
         # "v2":(13,26),
         # "v3":(26,39),
@@ -1674,11 +1719,11 @@ if __name__ == '__main__':
         # "v12":(71,72),
         # "v13":(72,73),
     },
-    variable_down=[
-        73,43,28
-    ],
+    # variable_down=[
+    #     73,43,28
+    # ],
     variable_order=[
-        "v1","v2","v3","v4","v5","v6"
+        "v1" # ,"v2","v3","v4","v5","v6"
     ])
 
     output = model(input,1)
