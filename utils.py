@@ -9,6 +9,13 @@ stds = pd.read_csv('/home/gaoziyi/weather/weather_bench/concatenated_array_mean_
 # means = np.load('/home/gaoziyi/weather/weather_bench/concatenated_array_mean.npy')
 # stds = np.load('/home/gaoziyi/weather/weather_bench/concatenated_array_std.npy')
 
+def get_loss_weights():
+    weights = np.linspace(0.005,0.065,13)
+    # 5 times weights
+    weights = weights.repeat(5)
+    weights = np.concatenate([weights,np.array([0.1,0.1,1.0])],axis=0)
+    return weights
+
 def log_indices():
     return {
         '2m': -1,

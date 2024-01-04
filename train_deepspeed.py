@@ -9,6 +9,7 @@ Link to the paper: https://arxiv.org/abs/2002.04155
 
 import numpy as np
 from sympy import Not
+from sympy.logic.inference import valid
 import torch
 from torch.utils.data import DataLoader
 import time
@@ -20,7 +21,7 @@ import deepspeed
 from deepspeed import comm
 from omegaconf import DictConfig, OmegaConf , open_dict 
 
-from weather_forcast.utils import get_stds, log_indices
+from weather_forcast.utils import get_stds, log_indices, get_loss_weights
 
 from weather_forcast.validate import validate_onestep
 import loguru 
@@ -29,6 +30,7 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
           deepspeed_config=None, finetune_time = 1):
     indices = log_indices()
     stds = get_stds()
+    loss_weights_gc = get_loss_weights()
 
     loguru.logger.info(f'deepspeed_config: {deepspeed_config}')
 
@@ -118,21 +120,24 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                 compute_loss = loss + train_param.time_regularization_weight * loss_regularization
             else:
                 if sigma is None:
-                    compute_loss = loss
+                    if hasattr(train_param,'loss_weights_gc') and train_param.loss_weights_gc:
+                        compute_loss = (loss * torch.from_numpy(loss_weights_gc).to(loss.device).reshape(1,-1,1,1)).sum(dim=1)
+                        
+                    else:
+                        compute_loss = loss
                 else:
                     if train_param.meaning_uncertainty:
                         use_sigma = sigma.mean(dim=(2,3),keepdim=True)
                     else:
                         use_sigma = sigma
                         
-                    if train_param.em_uncertainty_training:
-                        if train_param.em_uncertainty_training.enable:
-                            if (epoch + 1) % train_param.em_uncertainty_training.uncertainty_graident_everyepoch == 0:
-                                loss = loss.detach()
-                                compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
-                            else:
-                                use_sigma = use_sigma.detach()
-                                compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                    if hasattr(train_param,'em_uncertainty_training') and train_param.em_uncertainty_training.enable:   
+                        if (epoch + 1) % train_param.em_uncertainty_training.uncertainty_graident_everyepoch == 0:
+                            loss = loss.detach()
+                            compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                        else:
+                            use_sigma = use_sigma.detach()
+                            compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
                     else:            
                         compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma 
             
@@ -206,7 +211,7 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
 
                 if step % train_param.validate_step == 0 and deepspeed_config.local_rank == 0:
                     if valid_set is not None:
-                        rmse, acc = validate_onestep(model,validloader)
+                        rmse, acc = validate_onestep(model,validloader,step = valid_set.input_step)
                         if wandb is not None:
                             
                             # upload = {

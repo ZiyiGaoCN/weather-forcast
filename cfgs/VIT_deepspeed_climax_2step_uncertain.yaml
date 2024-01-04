@@ -1,0 +1,86 @@
+model:
+  model_path: model.VIT #'dense' or 'conv', 'dense2' or 'conv2'
+  model_type: Model
+  param: 
+    input_dim: 136
+    output_dim: 68
+    lat_dim: 32
+    lon_dim: 64 # above are input and output parameters
+    hidden_dim: 1024
+    patch_size: 2
+    n_heads: 16
+    num_layers: 8
+    mlp_ratio: 4 
+    drop_rate: 0.1
+    ape: True
+    uncertainty_loss: True
+
+data: 
+  data_path : /dev/shm/store/checkpoint/original_dataset
+  npy_name: /dev/shm/store/original_dataset/dataset.npy
+  shape: [58436, 68, 32, 64]
+  preload_to_memory: False
+  augment: False
+  input_step : 2
+  train_range: [0,56000]
+  val_range: [56000,58436]
+
+train: 
+  optimizer:
+    scheduler: 
+      # name: NoamLR
+      # hidden_dim: 192
+      # warmup_steps: 1000
+      name: CosineAnnealingLR
+      T_max: 87500
+      eta_min: 1.0e-8
+      warmup_steps: 2500
+  n_epochs: 200  
+  ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint
+  validate_step : 2000
+  validate_dataloader:
+    batch_size: 64
+    num_workers: 16
+    prefetch_factor: 16
+    shuffle: False
+  uncertainty_loss: True
+  em_uncertainty_training: 
+    enable: False
+    uncertainty_graident_everyepoch: 10
+  time_regularization: False
+  time_regularization_weight: 1
+  meaning_uncertainty: False
+
+  
+
+  restore_session:
+    yes: False
+    load_dir: checkpoint
+    ckpt_id: 200
+
+  deepspeed_config_yaml:
+    train_batch_size: 128
+    train_micro_batch_size_per_gpu: 128  
+    optimizer:
+      type: Adam
+      params:
+        lr: 5.0e-4
+        weight_decay: 1.0e-5
+        betas: [0.9, 0.95]
+    zero_optimization:
+      stage: 0
+    # gradient_clipping: 5
+    data_efficiency:
+      data_sampling:
+        enabled: true
+        num_workers: 16
+        prefetch_factor: 8
+logger: 
+  project: weather-forecast-deepspeed
+  name: VIT-climax-uncertain-2step
+
+seed: 114514
+
+hydra:
+  run:
+    dir: null

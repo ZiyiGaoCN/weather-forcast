@@ -40,6 +40,7 @@ class WeatherDataet_numpy(Dataset):
 
     def __init__(self, data, range , 
                  transform=None, target_transform=None, step = 1,
+                 input_step=1,
                  channul_range=(0,112), preload = False):        
         start = range[0]
         end = range[1]
@@ -53,9 +54,10 @@ class WeatherDataet_numpy(Dataset):
         self.start = start
         self.end = end
         
+        self.input_step = input_step
         self.num_step = step    #  default: 20, for 5-days
         
-        self.num_data = (end  - start ) - (self.num_step)
+        self.num_data = (end  - start ) - (self.num_step) - (self.input_step - 1)
 
         self.channel_range = slice(channul_range[0], channul_range[1])
 
@@ -73,14 +75,14 @@ class WeatherDataet_numpy(Dataset):
         id = idx + self.start
         # you can reduce it for auto-regressive training 
         
-        input = np.array(self.data[id : id + 1, : , :, :])
-        target = np.array(self.data[id + 1 : id + 1 + self.num_step, self.channel_range , : , : ])
+        input = np.array(self.data[id : id + self.input_step, : , :, :])
+        target = np.array(self.data[id + self.input_step : id + self.input_step + self.num_step, self.channel_range , : , : ])
         
         input = torch.from_numpy(input)
         target = torch.from_numpy(target)
 
-        input = torch.nan_to_num(input) # t c h w 
-        target = torch.nan_to_num(target) # t c h w 
+        input = torch.nan_to_num(input) # t , in,c h w 
+        target = torch.nan_to_num(target) # t, out, c h w 
         if self.target_transform:
             target = self.target_transform(target)
         if self.transform:

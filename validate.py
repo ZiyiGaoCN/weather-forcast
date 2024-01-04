@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 import hydra 
 import importlib
@@ -10,14 +11,16 @@ import os
 from utils import calculate_rmse,calculate_acc
 from dataset.dataset_npy import WeatherDataet_npy
 
-def validate_onestep(model,dataloader):
+C = 68
+
+def validate_onestep(model , dataloader, step = 1 ):
     rmse = []
     acc = []
     model.eval()
     device = next(model.parameters()).device
     with torch.no_grad():
         for i,(input,target) in tqdm.tqdm(enumerate(dataloader)):
-            input = input.reshape(-1,68,32,64)
+            input = input.reshape(-1,C * step,32,64)
             input = input.to(device)
             target = target.to(device)
             
@@ -31,7 +34,7 @@ def validate_onestep(model,dataloader):
             else:
                 output = model(input,time_embed) #.detach().cpu()
             
-            target = target.reshape(-1,68,32,64)
+            target = target.reshape(-1,C,32,64)
             
             # valid_loss = F.mse_loss(output,target,reduction='none').cpu().float()
             rmse.append(calculate_rmse(output,target))

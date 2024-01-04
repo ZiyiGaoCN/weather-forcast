@@ -66,8 +66,8 @@ def main(cfg:DictConfig):
 
     data = np.memmap(cfg.data.npy_name, dtype=np.float32, mode='c', shape = tuple(cfg.data.shape))
 
-    train_set = WeatherDataet_numpy(data,range=cfg.data.train_range)
-    valid_set = WeatherDataet_numpy(data,range=cfg.data.val_range)
+    train_set = WeatherDataet_numpy(data,range=cfg.data.train_range,input_step=cfg.data.input_step)
+    valid_set = WeatherDataet_numpy(data,range=cfg.data.val_range,input_step=cfg.data.input_step)
     
 
     # train_data, valid_data, valid_data_20step = split_dataset_npy(**cfg.data, autoregressive=cfg.train.autoregressive,transform=None, target_transform=None)
