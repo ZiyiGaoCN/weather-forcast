@@ -2,7 +2,6 @@ import torch
 import numpy as np
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
-import hydra 
 import importlib
 import torch.nn.functional as F
 import tqdm
@@ -83,7 +82,7 @@ def validate_20step(model,dataloader,step = 20):
         
     return rmses, accs
 
-@hydra.main(version_base=None, config_path='./cfgs/validate', config_name="validate_onestep")
+# @hydra.main(version_base=None, config_path='./cfgs/validate', config_name="validate_onestep")
 def main(cfg):
     
     # Initialize model 
