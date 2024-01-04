@@ -99,7 +99,9 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
             target = target.view(B, out_seq*C_out, H, W)
             
             if train_param.uncertainty_loss:
-                outputs, sigma = model_engine(input,time_embed)
+                tu = model_engine(input,time_embed)
+                outputs, sigma = tu[0], tu[1]
+                
             else:
                 outputs = model_engine(input,time_embed)
                 sigma = None
@@ -139,7 +141,7 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                             use_sigma = use_sigma.detach()
                             compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
                     else:            
-                        compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma 
+                        compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma - 0.01 * tu[2] + 0.01 * tu[3]  
             
             compute_loss = compute_loss.mean()
 

@@ -5,7 +5,30 @@ from einops import rearrange
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import math
 
+class Maxmin_variance(nn.Module):
+    def __init__(self, dim=(1,68,32,64)):
+        super().__init__()
+        self.max_logvar = nn.Parameter(torch.ones(dim)*2)
+        self.min_logvar = nn.Parameter(torch.ones(dim)*-10)
+        
+        # varmax_ = self.varmax * torch.ones_like(logvar) 
+        # varmin_ = self.varmin * torch.ones_like(logvar)
+        # varmax_ = varmax_.to(logvar.device)
+        # varmin_ = varmin_.to(logvar.device)        
 
+
+            # TODO: to utils
+            
+    def compute_uncertain_loss(self,logvar,varmin,varmax):
+        varmin = varmin.unsqueeze(-1)
+        varmax = varmax.unsqueeze(-1)
+        logvar = varmax - nn.functional.softplus(varmax - logvar)
+        logvar = varmin + nn.functional.softplus(logvar - varmin)
+        return logvar,varmin,varmax
+
+    def forward(self, x):
+        return self.compute_uncertain_loss(x,self.min_logvar,self.max_logvar)
+        
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
         super().__init__()
@@ -1293,8 +1316,8 @@ class Decoder(nn.Module):
                     drop_path_rate = 0.1,
                     mlp_ratio = 4,
                     uncertainty_loss = False,
-                    varmin = -5,
-                    varmax = 5, 
+                    # varmin = -5,
+                    # varmax = 5, 
                     **kwargs):
         super().__init__()
 
@@ -1303,8 +1326,6 @@ class Decoder(nn.Module):
              int(lon_dim*(2**i)),
              int((z_dim-1)*(2**i)+1))
              for i in range(len(depths))]
-        self.varmin = varmin
-        self.varmax = varmax
         self.hidden_dim = hidden_dim
 
         self.pos_drop = nn.Dropout(p=0.0)
@@ -1317,11 +1338,15 @@ class Decoder(nn.Module):
 
         self.final_up = nn.ConvTranspose3d(hidden_dim, out_dim, kernel_size=patch_size,
                                             stride=patch_size, padding=0, output_padding=0, groups=1, bias=False, dilation=1, padding_mode='zeros')
-        
+        self.final_out = nn.Conv3d(out_dim, out_dim, kernel_size=1, stride=1, padding=0, bias=False)
+
         if self.uncertainty_loss:
-            self.final_up_uncertainty = nn.ConvTranspose3d(hidden_dim, out_dim, kernel_size=patch_size,
-                                            stride=patch_size, padding=0, output_padding=0, groups=1, bias=False, dilation=1, padding_mode='zeros')
-            trunc_normal_(self.final_up_uncertainty.weight, std=.02)
+            self.final_up_uncertainty = nn.Conv3d(out_dim, out_dim, kernel_size=1, stride=1, padding=0, bias=False)
+            # TODO: variable
+            self.variance_control = Maxmin_variance()
+            # trunc_normal_(self.final_up_uncertainty.weight, std=0.0)
+            # torch.nn.init.normal_(self.final_up_uncertainty.weight,mean=0,std=0.001)
+            # torch.nn.init.zeros_()
             
         self.concat_back_dim = nn.ModuleList()
         self.norm = norm_layer(hidden_dim)
@@ -1357,27 +1382,25 @@ class Decoder(nn.Module):
 
         x = self.norm(x)
         x = x.view(B, H*W*Z, C).permute(0,2,1).contiguous().view(B,C,H,W,Z)
+        x = self.final_up(x)
         if self.uncertainty_loss:
-            mean = self.final_up(x)
+            mean = self.final_out(x)
             
             logvar = self.final_up_uncertainty(x)
+            # import loguru
 
-            varmax_ = self.varmax * torch.ones_like(logvar) 
-            varmin_ = self.varmin * torch.ones_like(logvar)
-            varmax_ = varmax_.to(logvar.device)
-            varmin_ = varmin_.to(logvar.device)        
+            # loguru.logger.info(logvar[0,0,0,0,0])
+            logvar, logvar_min , logvar_max = self.variance_control(logvar)
+            
+            # loguru.logger.info(logvar[0,0,0,0,0])
+            # loguru.logger.info(logvar_min[0,0,0,0,0])
+            # loguru.logger.info(logvar_max[0,0,0,0,0])
 
-
-            # TODO: to utils
-            def compute_uncertain_loss(logvar,varmin,varmax):
-                logvar = varmax - nn.functional.softplus(varmax - logvar)
-                logvar = varmin + nn.functional.softplus(varmin - logvar)
-                return logvar
                 
 
-            return self.final_up(x) , compute_uncertain_loss(logvar,varmin_,varmax_)
+            return mean , logvar , logvar_min , logvar_max
         
-        x = self.final_up(x)
+        x = self.final_out(x)
         
         return x
     def flops(self,x):
@@ -1519,8 +1542,8 @@ class Model(nn.Module):
                     drop_path_rate = 0.1,
                     mlp_ratio = 4,
                     uncertainty_loss = False,
-                    varmin = -5,
-                    varmax = 5,
+                    # varmin = -5,
+                    # varmax = 5,
                     **kwargs):
         super().__init__()
         self.variable_dict = variable_dict
@@ -1603,8 +1626,8 @@ class Model(nn.Module):
                 drop_path_rate = drop_path_rate,
                 mlp_ratio = mlp_ratio,
                 uncertainty_loss=uncertainty_loss,
-                varmin = varmin,
-                varmax = varmax 
+                # varmin = varmin,
+                # varmax = varmax 
             )
             for k,v in variable_dict.items()
         })
@@ -1636,10 +1659,14 @@ class Model(nn.Module):
         
         if self.uncertainty_loss:
             final_tensor = torch.cat([final[k][0] for k in self.variable_order],dim=1)
-            sigma = torch.cat([final[k][1] for k in self.variable_order],dim=1)            
+            sigma  = torch.cat([final[k][1] for k in self.variable_order],dim=1)       
+            logvar_min  = torch.cat([final[k][2] for k in self.variable_order],dim=1)       
+            logvar_max  = torch.cat([final[k][3] for k in self.variable_order],dim=1)            
             final_tensor.squeeze_(-1)
             sigma.squeeze_(-1)
-            return final_tensor,sigma
+            logvar_min.squeeze_(-1)
+            logvar_max.squeeze_(-1)
+            return final_tensor, sigma, logvar_min, logvar_max
         else:
             final = torch.cat([final[k] for k in self.variable_order],dim=1)
         # final = final.squeeze(1).permute(0,3,1,2).contiguous()

@@ -30,7 +30,8 @@ def validate_onestep(model , dataloader, step = 1 ):
                 time_embed = None
             
             if model.uncertainty_loss:
-                output, sigma = model(input,time_embed)
+                tu = model(input,time_embed)
+                output, sigma = tu[0], tu[1]
             else:
                 output = model(input,time_embed) #.detach().cpu()
             
@@ -61,7 +62,8 @@ def validate_20step(model,dataloader,step = 20):
                     time_embed = None
 
                 if model.uncertainty_loss:
-                    output, sigma = model(input,time_embed)
+                    tu = model(input,time_embed)
+                    output, sigma = tu[0], tu[1]
                     # print(sigma.max(),sigma.min())
                 else:
                     output = model(input,time_embed) #.detach().cpu()

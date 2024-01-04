@@ -183,6 +183,9 @@ def main(cfg:DictConfig):
                     "sample_ratio": t,
                 })
                 sample_ratio = distribution(p)
+            elif cfg.data.sample.name == 'fengwu':
+                from weather_forcast.sample.fengwu_sample import distribution
+                sample_ratio = distribution()
             else:
                 sample_ratio = None
         else :

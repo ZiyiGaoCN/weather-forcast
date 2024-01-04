@@ -11,6 +11,29 @@ from torch.utils.checkpoint import checkpoint_sequential
 
 from loguru import logger 
 
+
+class Maxmin_variance(nn.Module):
+    def __init__(self, dim=(1,68,32,64)):
+        super().__init__()
+        self.max_logvar = nn.Parameter(torch.ones(dim)*2)
+        self.min_logvar = nn.Parameter(torch.ones(dim)*-10)
+        
+        # varmax_ = self.varmax * torch.ones_like(logvar) 
+        # varmin_ = self.varmin * torch.ones_like(logvar)
+        # varmax_ = varmax_.to(logvar.device)
+        # varmin_ = varmin_.to(logvar.device)        
+
+
+            # TODO: to utils
+            
+    def compute_uncertain_loss(self,logvar,varmin,varmax):
+        logvar = varmax - nn.functional.softplus(varmax - logvar)
+        logvar = varmin + nn.functional.softplus(logvar - varmin)
+        return logvar,varmin,varmax
+
+    def forward(self, x):
+        return self.compute_uncertain_loss(x,self.min_logvar,self.max_logvar)
+
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
         super().__init__()
@@ -203,9 +226,14 @@ class AFNONet(nn.Module):
         # Generator head
         # self.head = nn.Linear(self.representation_size, self.num_features)
         self.head = nn.ConvTranspose2d(embed_dim, out_chans, kernel_size=(1, 1), stride=(1, 1))
+        
+        # self.final_tanh = nn.Tanh()
+        
+        # self.final_go = nn.nn.ConvTranspose2d(out_chans, out_chans, kernel_size=(1, 1), stride=(1, 1))
+        
         if self.uncertainty_loss:
-            self.uncertainty_head = nn.ConvTranspose2d(embed_dim, out_chans, kernel_size=(1, 1), stride=(1, 1))
-            trunc_normal_(self.uncertainty_head.weight, std=.02)
+            self.final_sigma = nn.ConvTranspose2d(embed_dim, out_chans, kernel_size=(1, 1), stride=(1, 1))
+            self.variance_control = Maxmin_variance(dim=(1,out_chans,self.h,self.w))
             # raise NotImplementedError
 
         if dropcls > 0:
@@ -256,9 +284,15 @@ class AFNONet(nn.Module):
         
         # x = self.pre_logits(x)
         # logger.info(f"pre_logits:{x.shape}")
+        
         if self.uncertainty_loss:
-            return self.head(x),self.uncertainty_head(x)
+            mean , sigma = self.head(x) , self.final_sigma(x)
+            # logger.info(f"final_sigma:{x.shape}")
+            sigma,varmin,varmax = self.variance_control(sigma)
+            # logger.info(f"variance_control:{x.shape}")
+            return mean, sigma,varmin,varmax
         x = self.head(x)
+        
         # logger.info(f"head:{x.shape}")
         return x
 
