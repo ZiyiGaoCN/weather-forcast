@@ -4,6 +4,27 @@ import torch.utils.checkpoint as checkpoint
 from einops import rearrange
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
+class Maxmin_variance(nn.Module):
+    def __init__(self, dim=(1,68,32,64)):
+        super().__init__()
+        self.max_logvar = nn.Parameter(torch.ones(dim)*2)
+        self.min_logvar = nn.Parameter(torch.ones(dim)*-10)
+        
+        # varmax_ = self.varmax * torch.ones_like(logvar) 
+        # varmin_ = self.varmin * torch.ones_like(logvar)
+        # varmax_ = varmax_.to(logvar.device)
+        # varmin_ = varmin_.to(logvar.device)        
+
+
+            # TODO: to utils
+            
+    def compute_uncertain_loss(self,logvar,varmin,varmax):
+        logvar = varmax - nn.functional.softplus(varmax - logvar)
+        logvar = varmin + nn.functional.softplus(logvar - varmin)
+        return logvar,varmin,varmax
+
+    def forward(self, x):
+        return self.compute_uncertain_loss(x,self.min_logvar,self.max_logvar)
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -857,6 +878,7 @@ class Model(nn.Module):
         self.output = nn.Conv2d(in_channels=self.hidden_dim,out_channels=self.out_chans,kernel_size=1,bias=False)
         if self.uncertainty_loss:
             self.sigma_output = nn.Conv2d(in_channels=self.hidden_dim,out_channels=self.out_chans,kernel_size=1,bias=False)
+            self.variance_control = Maxmin_variance()
             # trunc_normal_(self.sigma_output.weight, std=.02)
             torch.nn.init.zeros_(self.sigma_output.weight)
 
@@ -870,7 +892,10 @@ class Model(nn.Module):
         x = x.permute(0,2,1).contiguous() 
         x = x.view(x.shape[0],self.hidden_dim,self.lat_dim,self.lon_dim) # [B,C,H,W]
         if self.uncertainty_loss:
-            return self.output(x), self.sigma_output(x)
+            
+            mean,variance =  self.output(x), self.sigma_output(x)
+            varaince , minvar, maxvar = self.variance_control(variance,step)
+            return mean, varaince, minvar, maxvar
         x = self.output(x) # [B, H*W, C]
         
         return x
