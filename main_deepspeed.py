@@ -10,7 +10,6 @@ Link to the paper: https://arxiv.org/abs/2002.04155
 
 import datetime
 import os
-import hydra
 import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf , open_dict
