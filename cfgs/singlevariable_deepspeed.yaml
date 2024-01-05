@@ -10,8 +10,8 @@ model:
     patch_size: [1,1,1]
     fusion_layers: [4,12]
     fusion_window_size: [4,8,1]
-    fusion_hidden_size: [1024,2048]
-    num_heads: [4,8]
+    fusion_hidden_size: [1024,1024]
+    num_heads: [4,4]
     # fusion_hidden_size: [768,1536,3072]
     time_embed: True
     variable_fusion: False
@@ -93,7 +93,7 @@ train:
   deepspeed_config: ./cfgs/deepspeed.json
   deepspeed_config_yaml:
     train_batch_size: 32
-    train_micro_batch_size_per_gpu: 32  
+    train_micro_batch_size_per_gpu: 8  
     optimizer:
       type: Adam
       params:
@@ -101,7 +101,7 @@ train:
         weight_decay: 0
     zero_optimization:
       stage: 0
-    # gradient_clipping: 5
+    gradient_clipping: 32
     data_efficiency:
       data_sampling:
         enabled: true
