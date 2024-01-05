@@ -20,6 +20,7 @@ data:
   npy_name: /dev/shm/store/original_dataset/dataset.npy
   shape: [58436, 68, 32, 64]
   preload_to_memory: False
+  input_step: 1
   augment: False
   train_range: [0,56000]
   val_range: [56000,58436]
