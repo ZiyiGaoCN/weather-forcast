@@ -106,7 +106,7 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                 outputs = model_engine(input,time_embed)
                 sigma = None
             loss = F.mse_loss(input=outputs, target=target, reduction='none')
-
+            uplow_loss = None
             
             if train_param.time_regularization: 
                 raise NotImplementedError
@@ -141,9 +141,13 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                             use_sigma = use_sigma.detach()
                             compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
                     else:            
-                        compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma - 0.01 * tu[2] + 0.01 * tu[3]  
+                        compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                        uplow_loss = - 0.01 * tu[2] + 0.01 * tu[3] 
+                        uplow_loss = uplow_loss.sum() 
             
             compute_loss = compute_loss.mean()
+            if uplow_loss is not None:
+                compute_loss += uplow_loss
 
             batch_cost.append(compute_loss.item())
             model_engine.backward(compute_loss)
