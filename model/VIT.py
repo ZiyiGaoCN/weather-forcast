@@ -882,7 +882,7 @@ class Model(nn.Module):
             # trunc_normal_(self.sigma_output.weight, std=.02)
             torch.nn.init.zeros_(self.sigma_output.weight)
 
-    def forward(self, x, step):
+    def forward(self, x, step=None):
         # [B, C, H, W]
         x = self.patch_embed(x) # [B, Ph*Pw, C] 
         if self.ape:
@@ -894,7 +894,7 @@ class Model(nn.Module):
         if self.uncertainty_loss:
             
             mean,variance =  self.output(x), self.sigma_output(x)
-            varaince , minvar, maxvar = self.variance_control(variance,step)
+            varaince , minvar, maxvar = self.variance_control(variance)
             return mean, varaince, minvar, maxvar
         x = self.output(x) # [B, H*W, C]
         
