@@ -1,35 +1,3 @@
-model:
-  model_path: model.swin_unet_multivariable #'dense' or 'conv', 'dense2' or 'conv2'    
-  model_type: Model
-  param: 
-    lat_dim: 32
-    lon_dim: 64 # above are input and output parameters
-    hidden_dim: 384
-    ape: True
-    patch_size: [1,1,1]
-    fusion_layers: [4,4,4]
-    fusion_window_size: [4,8,1]
-    fusion_hidden_size: [384,768,1536]
-    # fusion_hidden_size: [768,1536,3072]
-    time_embed: True
-    varialbe_fusion: False
-    variable_dict:
-      temperature: 68
-      # v_component_of_wind: 13
-      # specific_humidity: 13
-      # geopotential: 13
-      # u_component_of_wind: 13
-      # surface_variable: 3
-    # variable_down: [68,43,28]
-    variable_order:
-      - temperature
-      # - v_component_of_wind
-      # - specific_humidity
-      # - geopotential
-      # - u_component_of_wind
-      # - surface_variable
-    uncertainty_loss: True
-
 data: 
   data_path : /dev/shm/store/checkpoint/original_dataset
   npy_name: /dev/shm/store/original_dataset/dataset.npy
@@ -62,15 +30,15 @@ train:
     learning_rate: 0.1  
     weight_decay: 1e-5
     scheduler: 
-      name: CosineAnnealingLR
+      name: NOPE
       T_max: 40000
       eta_min: 1.0e-9
       warmup_steps: 1000
   time_regularization: False
-  n_epochs: 200
+  n_epochs: 350
   ckpt_dir: /home/gaoziyi/weather/finetune_checkpoint
   device: cuda:6
-  autoregressive: True
+  uncertainty_loss: False
   validate_step: 2000
   uncertainty_finetune: False
 
@@ -93,8 +61,8 @@ train:
     data_efficiency:
       data_sampling:
         enabled: true
-        num_workers: 16
-        prefetch_factor: 8
+        num_workers: 32
+        prefetch_factor: 32
 
 
 logger: #default wandb

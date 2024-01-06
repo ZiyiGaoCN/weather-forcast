@@ -41,6 +41,8 @@ from dataset.dataset_torch import WeatherDataet_numpy
 from validate import validate_20step
 import loguru
 
+from weather_forcast.utils import get_stds, log_indices, get_loss_weights
+
 #Use a fixed seed for repreducible results
 np.random.seed(1)
  
@@ -53,6 +55,7 @@ def set_seed(seed_value = 0):
 def main(cfg:DictConfig):
 
     set_seed(cfg.seed)
+    loss_weights_gc = get_loss_weights()
     
     # Initialize model 
     # model = initial_model(cfg.model)
@@ -215,17 +218,18 @@ def main(cfg:DictConfig):
             
             input = input.view(B, in_seq*C_in, H, W)
             target = target.view(B, out_seq*C_out, H, W)
-            # outputs = model_engine(input,time_embed)
             
-            if model.uncertainty_loss and cfg.train.uncertainty_loss:
-                outputs, sigma = model_engine(input,time_embed)
+            if train_param.uncertainty_loss:
+                tu = model_engine(input,time_embed)
+                outputs, sigma = tu[0], tu[1]
+                
             else:
                 outputs = model_engine(input,time_embed)
-            
+                sigma = None
             loss = F.mse_loss(input=outputs, target=target, reduction='none')
-
+            uplow_loss = None
             
-            if cfg.train.time_regularization: 
+            if train_param.time_regularization: 
                 raise NotImplementedError
                 with torch.no_grad():
                     time_embed_half = 0.5 
@@ -233,18 +237,38 @@ def main(cfg:DictConfig):
                 outputs_regularization = model_engine(half_output,time_embed_half)
                 target_output = outputs.detach()
                 loss_regularization = F.mse_loss(input=outputs_regularization, target=target_output)
-
+            
             if train_param.time_regularization:
                 raise NotImplementedError
                 compute_loss = loss + train_param.time_regularization_weight * loss_regularization
             else:
-                if model.uncertainty_loss and cfg.train.uncertainty_loss:
-                    sigma_mean = sigma.mean(dim=(2,3),keepdim=True)
-                    compute_loss = loss / (2*torch.exp(2*sigma_mean)) + sigma_mean 
+                if sigma is None:
+                    if hasattr(train_param,'loss_weights_gc') and train_param.loss_weights_gc:
+                        compute_loss = (loss * torch.from_numpy(loss_weights_gc).to(loss.device).reshape(1,-1,1,1)).sum(dim=1)
+                        
+                    else:
+                        compute_loss = loss
                 else:
-                    compute_loss = loss           
+                    if train_param.meaning_uncertainty:
+                        use_sigma = sigma.mean(dim=(2,3),keepdim=True)
+                    else:
+                        use_sigma = sigma
+                        
+                    if hasattr(train_param,'em_uncertainty_training') and train_param.em_uncertainty_training.enable:   
+                        if (epoch + 1) % train_param.em_uncertainty_training.uncertainty_graident_everyepoch == 0:
+                            loss = loss.detach()
+                            compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                        else:
+                            use_sigma = use_sigma.detach()
+                            compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                    else:            
+                        compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                        uplow_loss = - 0.01 * tu[2] + 0.01 * tu[3] 
+                        uplow_loss = uplow_loss.sum() 
             
             compute_loss = compute_loss.mean()
+            if uplow_loss is not None:
+                compute_loss += uplow_loss
 
             model_engine.backward(compute_loss)
             

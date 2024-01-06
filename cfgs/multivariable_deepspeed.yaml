@@ -4,13 +4,16 @@ model:
   param: 
     lat_dim: 32
     lon_dim: 64 # above are input and output parameters
-    hidden_dim: 96
+    hidden_dim: 512
     ape: True
-    patch_size: [1,1,1]
-    fusion_layers: [12,12,12]
+    patch_size: [1,1]
+    depths: [2]
+    fusion_layers: [4,12]
+    window_size: [4,8]
     fusion_window_size: [4,8,6]
+    num_heads: [4,8]
     # fusion_hidden_size: [96,192,384]
-    fusion_hidden_size: [96,192,384]
+    fusion_hidden_size: [512,512]
     # fusion_hidden_size: [768,1536,3072]
     time_embed: True
     variable_dict:
@@ -30,8 +33,8 @@ model:
       - surface_variable
     variable_fusion: False
     uncertainty_loss: True
-    drop_rate: 0.5
-    attn_drop_rate: 0.5
+    drop_rate: 0.1
+    attn_drop_rate: 0.1
 
 
 data: 
@@ -42,6 +45,7 @@ data:
   augment: False
   train_range: [0,56000]
   val_range: [56000,58436]
+  input_step: 1
 
 train: 
   optimizer:
@@ -56,15 +60,23 @@ train:
       T_max: 87500
       eta_min: 1.0e-8
       warmup_steps: 1000
-  n_epochs: 200  
-  ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint
+  n_epochs: 50  
+  ckpt_dir: /mnt/vepfs/devel/gaoziyi/weather/deepspeed_checkpoint
   device: cuda:0
   autoregressive: True
   validate_step : 2000
-  # time_regularization: True
+  validate_dataloader:
+    batch_size: 32
+    num_workers: 16
+    prefetch_factor: 16
+    shuffle: False
+
+
+  uncertainty_loss: True
   time_regularization: False
   time_regularization_weight: 1
-  meaning_uncertainty: True
+  meaning_uncertainty: False
+  gradient_clip: 32
 
   batch_size: 64
 
@@ -80,8 +92,8 @@ train:
 
   deepspeed_config: ./cfgs/deepspeed.json
   deepspeed_config_yaml:
-    train_batch_size: 128
-    train_micro_batch_size_per_gpu: 32  
+    train_batch_size: 32
+    train_micro_batch_size_per_gpu: 4  
     optimizer:
       type: Adam
       params:
@@ -89,20 +101,24 @@ train:
         weight_decay: 0
     zero_optimization:
       stage: 0
-    gradient_clipping: 5
+    gradient_clipping: 1
     data_efficiency:
       data_sampling:
         enabled: true
         num_workers: 16
         prefetch_factor: 8
-logger: 
+
+
+logger: #default wandb
     project: weather-forecast-deepspeed
-    name: multivarible-swin-96-patch1-dropout0.5
+    name: multivariable-512
 
 seed: 114514
 
 hydra:
   run:
     dir: null
+
+    
 
     

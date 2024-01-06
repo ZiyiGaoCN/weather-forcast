@@ -2,25 +2,26 @@ model:
   model_path: model.swin_unet_multivariable #'dense' or 'conv', 'dense2' or 'conv2'    
 data: 
   sample: 
-    name: Default
+    name: fengwu
     n: 10
     T_max: 200
 
 
 finetune: 
-  initialize_checkpoint: /home/gaoziyi/weather/deepspeed_checkpoint/VIT-/step_48000/mp_rank_00_model_states.pt
-  
-train:   
-  scheduler: 
-    name: CosineAnnealingLR
-    T_max: 40000
-    eta_min: 1.0e-9
-    warmup_steps: 1000
+  initialize_checkpoint: /home/gaoziyi/weather/deepspeed_checkpoint/VIT-nouncertain-wd0.1-climax/step_48000/mp_rank_00_model_states.pt
+
+train:  
+  optimizer:
+    scheduler: 
+      name: NO
+      T_max: 80000
+      eta_min: 1.0e-9
+      warmup_steps: 1000
   time_regularization: False
-  n_epochs: 200
+  n_epochs: 350
   ckpt_dir: /home/gaoziyi/weather/finetune_checkpoint
   validate_step: 2000
-  uncertainty_loss: True
+  uncertainty_loss: False
   uncertainty_finetune: False
 
   deepspeed_config_yaml:
@@ -29,13 +30,18 @@ train:
       params:
         lr: 2.0e-6
         weight_decay: 0
-    gradient_clipping: 5
+    gradient_clipping: 32
+    data_efficiency:
+      data_sampling:
+        enabled: true
+        num_workers: 32
+        prefetch_factor: 32
     
 
 
 logger: #default wandb
   project: fengwu-finetune
-  name: VIT
+  name: VIT-climax-nouncertain-fix-optimizer
 
 seed: 114514
 

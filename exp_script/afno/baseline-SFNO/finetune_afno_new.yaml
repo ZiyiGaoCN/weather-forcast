@@ -21,7 +21,7 @@ train:
       eta_min: 1.0e-9
       warmup_steps: 1000
   time_regularization: False
-  n_epochs: 40
+  n_epochs: 20
   ckpt_dir: /home/gaoziyi/weather/fourcastnet_finetune_checkpoint
   validate_step: 2000
   uncertainty_loss: False
