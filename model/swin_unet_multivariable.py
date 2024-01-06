@@ -1677,10 +1677,31 @@ class Model(nn.Module):
     def forward(self, x, timestep = None):
         x_varibles = {}
         acc = 0
+        
+        indices = list(range(68))
+        indices.remove(65)
+        indices.remove(66)
+        indices.remove(67)
+
+        # 在指定位置插入索引67, 66, 65
+        indices.insert(12 + 1, 67) # 在索引12后插入67
+        indices.insert(25 + 2, 66) # 在索引25后插入66，注意索引偏移
+        indices.insert(64 + 3, 65) # 在索引64后插入65，注意索引偏移
+        
+        x = x[:,indices,:,:]
+        
+        # 创建用于恢复原始顺序的索引数组
+        restore_indices = [0] * 68
+        for original_index, reordered_index in enumerate(indices):
+            restore_indices[reordered_index] = original_index
+        
         for k in self.variable_order:
             v = self.variable_dict[k]
-            x_varibles[k] = self.encoders[k](x[:,slice(acc,acc+v),:,:])
-
+            
+            input = x[:,slice(acc,acc+v),:,:]
+            
+            x_varibles[k] = self.encoders[k]()
+            
             for i in range(len(x_varibles[k])):
                 x_varibles[k][i] = x_varibles[k][i].unsqueeze(-2)
  
@@ -1695,8 +1716,6 @@ class Model(nn.Module):
 
         for i,fusion in enumerate(self.fusions):
             x_downsample[i]=fusion(x_downsample[i],timestep)
-        logger.info(x_downsample[0][self.variable_order[0]].shape)
-        logger.info(x_downsample[1][self.variable_order[0]].shape)
         
         # for i in range(2):
         #     x_downsample[i] = torch.split(x_downsample[i],[1 for _ in self.variable_order],dim=-2)
@@ -1717,11 +1736,16 @@ class Model(nn.Module):
             sigma.squeeze_(-1)
             logvar_min.squeeze_(-1)
             logvar_max.squeeze_(-1)
+            final_tensor = final_tensor[:,restore_indices,:,:]
+            sigma = sigma[:,restore_indices,:,:]
+            logvar_min = logvar_min[:,restore_indices,:,:]
+            logvar_max = logvar_max[:,restore_indices,:,:]
             return final_tensor, sigma, logvar_min, logvar_max
         else:
             final = torch.cat([final[k] for k in self.variable_order],dim=1)
         # final = final.squeeze(1).permute(0,3,1,2).contiguous()
         final.squeeze_(-1)
+        final = final[:,restore_indices,:,:]
         return final 
         
 
