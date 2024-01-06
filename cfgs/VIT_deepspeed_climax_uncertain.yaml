@@ -35,8 +35,8 @@ train:
       T_max: 87500
       eta_min: 1.0e-8
       warmup_steps: 2500
-  n_epochs: 200  
-  ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint
+  n_epochs: 50  
+  ckpt_dir: /share/gaoziyi/weather/deepspeed_checkpoint
   validate_step : 2000
   validate_dataloader:
     batch_size: 64
@@ -59,8 +59,8 @@ train:
     ckpt_id: 200
 
   deepspeed_config_yaml:
-    train_batch_size: 128
-    train_micro_batch_size_per_gpu: 128  
+    train_batch_size: 32
+    train_micro_batch_size_per_gpu: 32  
     optimizer:
       type: Adam
       params:
