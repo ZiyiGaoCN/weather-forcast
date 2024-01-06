@@ -1700,7 +1700,7 @@ class Model(nn.Module):
             
             input = x[:,slice(acc,acc+v),:,:]
             
-            x_varibles[k] = self.encoders[k]()
+            x_varibles[k] = self.encoders[k](input)
             
             for i in range(len(x_varibles[k])):
                 x_varibles[k][i] = x_varibles[k][i].unsqueeze(-2)
