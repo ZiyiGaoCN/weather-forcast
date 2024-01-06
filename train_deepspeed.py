@@ -78,8 +78,7 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
         # Print the epoch number
         print('Epoch: %i of %i' % (epoch + 1, train_param.n_epochs))
 
-        batch_cost = []
-
+        
         count = 0
 
         model.train()
@@ -141,27 +140,33 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                             use_sigma = use_sigma.detach()
                             compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
                     else:            
-                        compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                        compute_loss = loss / (torch.exp(use_sigma)) + use_sigma
                         uplow_loss = - 0.01 * tu[2] + 0.01 * tu[3] 
-                        uplow_loss = uplow_loss.sum() 
-            
+                        uplow_loss = uplow_loss.mean() 
+                        
             compute_loss = compute_loss.mean()
+            backward_loss = compute_loss
             if uplow_loss is not None:
-                compute_loss += uplow_loss
+                backward_loss += uplow_loss
+                loguru.logger.info(f'loss: {(loss / (torch.exp(use_sigma))).mean().item()}')
+                loguru.logger.info(f'loss: {loss.mean().item()}')
+                loguru.logger.info(f'sigma: {use_sigma.mean().item()}')
+                loguru.logger.info(f'uplow_loss: {uplow_loss.item()}')
+                loguru.logger.info(f'compute_loss: {compute_loss.item()}')
 
-            batch_cost.append(compute_loss.item())
-            model_engine.backward(compute_loss)
+
+            model_engine.backward(backward_loss)
             
             
             
-            if step % 100 == 1 and r_step% model_engine.gradient_accumulation_steps() == 0:
-                comm.barrier()
-                grads = [torch.sum(p.grad**2).item() for p in model.parameters() if p.requires_grad]
-                grad_norm = np.sqrt(sum(grads))
-                if wandb is not None and deepspeed_config.local_rank == 0:
-                    wandb.log({
-                        'grad_norm': grad_norm,
-                    }, commit=False)
+            # if step % 100 == 1 and r_step% model_engine.gradient_accumulation_steps() == 0:
+            #     comm.barrier()
+            #     grads = [torch.sum(p.grad**2).item() for p in model.parameters() if p.requires_grad]
+            #     grad_norm = np.sqrt(sum(grads))
+            #     if wandb is not None and deepspeed_config.local_rank == 0:
+            #         wandb.log({
+            #             'grad_norm': grad_norm,
+            #         }, commit=False)
             
             
             r_step += 1
@@ -169,7 +174,8 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
             if r_step % model_engine.gradient_accumulation_steps() == 0:
                 r_step = 0
                 step +=1
-                scheduler.step()         
+                if scheduler is not None:
+                    scheduler.step()         
             
                 
                 if wandb is not None and deepspeed_config.local_rank == 0 :
@@ -189,7 +195,7 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                         wandb.log({
                             'computed_loss': compute_loss.item()
                         },commit=False)
-                        sigma_mean_batch = torch.exp(sigma_mean).mean(axis=(0))
+                        sigma_mean_batch = torch.exp(sigma_mean/2).mean(axis=(0))
                         # upload = {
                         #         'uncertainty/2m': sigma_mean[-1],
                         #         'uncertainty/10v': sigma_mean[-2],
@@ -237,9 +243,6 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                         
                         
 
-        epoch_cost = np.mean(batch_cost)
-
-        print("Average epoch training cost: ", epoch_cost)
         print("Epoch time:                   %f seconds" % (time.time() - t_start))
         print("Estimated time to complete:   %.2f minutes, (%.2f seconds)" %
               ((train_param.n_epochs - epoch - 1) * (time.time() - t_start) / 60,

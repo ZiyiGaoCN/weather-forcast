@@ -4,8 +4,8 @@ import xarray as xr
 import importlib
 import pandas as pd
 
-constants = xr.open_dataset('/home/gaoziyi/weather/weather_bench/bench/constants/constants_5.625deg.nc')
-stds = pd.read_csv('/home/gaoziyi/weather/weather_bench/concatenated_array_mean_std.csv')['std'].values
+constants = xr.open_dataset('/mnt/vepfs/devel/gaoziyi/weather/weather_forcast/constants/constants_5.625deg.nc')
+stds = pd.read_csv('/mnt/vepfs/devel/gaoziyi/weather/weather_forcast/constants/concatenated_array_mean_std.csv')['std'].values
 # means = np.load('/home/gaoziyi/weather/weather_bench/concatenated_array_mean.npy')
 # stds = np.load('/home/gaoziyi/weather/weather_bench/concatenated_array_std.npy')
 
