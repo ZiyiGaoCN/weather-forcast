@@ -119,33 +119,35 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                 target_regularization = model_engine(input,time_embed_AB)
                 loss_regularization = F.mse_loss(input=outputs_regularization, target=target_regularization)
             
+            
+            if sigma is None:
+                if hasattr(train_param,'loss_weights_gc') and train_param.loss_weights_gc:
+                    compute_loss = (loss * torch.from_numpy(loss_weights_gc).to(loss.device).reshape(1,-1,1,1)).sum(dim=1)
+                    
+                else:
+                    compute_loss = loss
+            else:
+                if train_param.meaning_uncertainty:
+                    use_sigma = sigma.mean(dim=(2,3),keepdim=True)
+                else:
+                    use_sigma = sigma
+                    
+                if hasattr(train_param,'em_uncertainty_training') and train_param.em_uncertainty_training.enable:   
+                    if (epoch + 1) % train_param.em_uncertainty_training.uncertainty_graident_everyepoch == 0:
+                        loss = loss.detach()
+                        compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                    else:
+                        use_sigma = use_sigma.detach()
+                        compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
+                else:            
+                    compute_loss = loss / (torch.exp(use_sigma)) + use_sigma
+                    uplow_loss = - 0.01 * tu[2] + 0.01 * tu[3] 
+                    uplow_loss = uplow_loss.mean() 
+                        
             if train_param.time_regularization:
                 # raise NotImplementedError
-                compute_loss = loss + train_param.time_regularization_weight * loss_regularization
-            else:
-                if sigma is None:
-                    if hasattr(train_param,'loss_weights_gc') and train_param.loss_weights_gc:
-                        compute_loss = (loss * torch.from_numpy(loss_weights_gc).to(loss.device).reshape(1,-1,1,1)).sum(dim=1)
-                        
-                    else:
-                        compute_loss = loss
-                else:
-                    if train_param.meaning_uncertainty:
-                        use_sigma = sigma.mean(dim=(2,3),keepdim=True)
-                    else:
-                        use_sigma = sigma
-                        
-                    if hasattr(train_param,'em_uncertainty_training') and train_param.em_uncertainty_training.enable:   
-                        if (epoch + 1) % train_param.em_uncertainty_training.uncertainty_graident_everyepoch == 0:
-                            loss = loss.detach()
-                            compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
-                        else:
-                            use_sigma = use_sigma.detach()
-                            compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
-                    else:            
-                        compute_loss = loss / (torch.exp(use_sigma)) + use_sigma
-                        uplow_loss = - 0.01 * tu[2] + 0.01 * tu[3] 
-                        uplow_loss = uplow_loss.mean() 
+                compute_loss = compute_loss + train_param.time_regularization_weight * loss_regularization
+            
                         
             compute_loss = compute_loss.mean()
             backward_loss = compute_loss
@@ -213,7 +215,6 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                         wandb.log(upload, commit=False)
 
                     if train_param.time_regularization:
-                        raise NotImplementedError 
                         wandb.log({
                             'train_loss_time_embed': loss_regularization.mean().item(),
                         },commit=False)
