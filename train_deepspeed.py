@@ -215,7 +215,7 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                     if train_param.time_regularization:
                         raise NotImplementedError 
                         wandb.log({
-                            'train_loss_time_embed': loss_regularization.item(),
+                            'train_loss_time_embed': loss_regularization.mean().item(),
                         },commit=False)
 
                 if hasattr(train_param,'validate_step') and step % train_param.validate_step == 0 and hasattr(train_param,'save_file'):
