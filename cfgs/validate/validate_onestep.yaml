@@ -23,7 +23,7 @@ data:
 validate: 
   step: 1
   device: cuda:7
-  checkpoint: /home/gaoziyi/weather/good_checkpoint/4/mp_rank_00_model_states.pt
+  checkpoint: /mnt/vepfs/devel/weather/good_checkpoint/4/mp_rank_00_model_states.pt
   batch_size: 64
 
 

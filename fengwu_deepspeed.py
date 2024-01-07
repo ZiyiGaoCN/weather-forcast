@@ -264,7 +264,7 @@ def main(cfg:DictConfig):
                     else:            
                         compute_loss = loss / (2*torch.exp(2*use_sigma)) + use_sigma
                         uplow_loss = - 0.01 * tu[2] + 0.01 * tu[3] 
-                        uplow_loss = uplow_loss.sum() 
+                        uplow_loss = uplow_loss.mean() 
             
             compute_loss = compute_loss.mean()
             if uplow_loss is not None:

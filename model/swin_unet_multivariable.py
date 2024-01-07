@@ -934,7 +934,7 @@ def timestep_embedding(timestep,dim, max_period=10000):
     freqs = torch.exp(
         -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
     )
-    args = timestep * freqs
+    args = timestep * freqs.unsqueeze(0)
     embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
     return embedding
 
@@ -1706,7 +1706,6 @@ class Model(nn.Module):
                 x_varibles[k][i] = x_varibles[k][i].unsqueeze(-2)
  
             acc+=v
-        logger.info(x_varibles[k][0].shape)
         x_downsample = [
             { k : x_varibles[k][i] for k in self.variable_order }
             for i in range(self.scale_lens)

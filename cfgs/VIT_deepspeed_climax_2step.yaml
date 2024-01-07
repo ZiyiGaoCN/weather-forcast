@@ -36,7 +36,7 @@ train:
       eta_min: 1.0e-8
       warmup_steps: 2500
   n_epochs: 200  
-  ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint
+  ckpt_dir: /mnt/vepfs/devel/weather/deepspeed_checkpoint
   validate_step : 2000
   validate_dataloader:
     batch_size: 64

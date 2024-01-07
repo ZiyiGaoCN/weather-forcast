@@ -41,7 +41,7 @@ train:
       # hidden_dim: 192
       # warmup_steps: 1000
   n_epochs: 200  
-  ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint
+  ckpt_dir: /mnt/vepfs/devel/weather/deepspeed_checkpoint
   device: cuda:0
   autoregressive: True
   validate_step : 500

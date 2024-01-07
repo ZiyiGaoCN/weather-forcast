@@ -8,7 +8,7 @@ data:
 
 
 finetune: 
-  initialize_checkpoint: /home/gaoziyi/weather/deepspeed_checkpoint/VIT-nouncertain-wd0.1-climax/step_38000/mp_rank_00_model_states.pt
+  initialize_checkpoint: /mnt/vepfs/devel/weather/deepspeed_checkpoint/VIT-nouncertain-wd0.1-climax/step_38000/mp_rank_00_model_states.pt
   
 train:   
   optimizer:
@@ -22,7 +22,7 @@ train:
       warmup_steps: 1000
   time_regularization: False
   n_epochs: 20
-  ckpt_dir: /home/gaoziyi/weather/fourcastnet_finetune_checkpoint
+  ckpt_dir: /mnt/vepfs/devel/weather/fourcastnet_finetune_checkpoint
   validate_step: 2000
   uncertainty_loss: False
   uncertainty_finetune: False

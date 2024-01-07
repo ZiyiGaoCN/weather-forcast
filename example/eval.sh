@@ -5,6 +5,8 @@ ckpt_path=/home/gaoziyi/weather/deepspeed_checkpoint/AFNO-uncertain/step_38000/m
 ckpt_path=/home/gaoziyi/weather/deepspeed_checkpoint/AFNO-gcloss/step_18000/mp_rank_00_model_states.pt
 ckpt_path=/home/gaoziyi/weather/deepspeed_checkpoint/SFNO-gcloss/step_32000/mp_rank_00_model_states.pt
 ckpt_path=/home/gaoziyi/weather/deepspeed_checkpoint/singlevariable-1024/step_62000/mp_rank_00_model_states.pt
+ckpt_path=/home/gaoziyi/weather/deepspeed_checkpoint/singlevariable-1024-nouncertain/step_72000/mp_rank_00_model_states.pt
+ckpt_path=/home/gaoziyi/weather/deepspeed_checkpoint/singlevariable-1024/step_72000/mp_rank_00_model_states.pt
 
 device=$1
 

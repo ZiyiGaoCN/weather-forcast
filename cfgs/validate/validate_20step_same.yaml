@@ -27,9 +27,9 @@ data:
 validate: 
   step: 20
   device: cuda:7
-  # checkpoint: /home/gaoziyi/weather/good_checkpoint/1/checkpoint
+  # checkpoint: /mnt/vepfs/devel/weather/good_checkpoint/1/checkpoint
   same: True
-  checkpoint: /home/gaoziyi/weather/good_checkpoint/3
+  checkpoint: /mnt/vepfs/devel/weather/good_checkpoint/3
   temp_dir: /dev/shm/store/validate
 
 logger: #default wandb

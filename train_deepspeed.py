@@ -108,16 +108,19 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
             uplow_loss = None
             
             if train_param.time_regularization: 
-                raise NotImplementedError
+                # raise NotImplementedError
+                
+                time_embed_A = torch.rand((B, 1)) * 2
+                time_embed_B = torch.rand((B, 1)) * 2
+                time_embed_AB = time_embed_A + time_embed_B
                 with torch.no_grad():
-                    time_embed_half = 0.5 
-                    half_output = model_engine(input,time_embed_half)
-                outputs_regularization = model_engine(half_output,time_embed_half)
-                target_output = outputs.detach()
-                loss_regularization = F.mse_loss(input=outputs_regularization, target=target_output)
+                    half_output = model_engine(input,time_embed_A)
+                outputs_regularization = model_engine(half_output,time_embed_B)
+                target_regularization = model_engine(input,time_embed_AB)
+                loss_regularization = F.mse_loss(input=outputs_regularization, target=target_regularization)
             
             if train_param.time_regularization:
-                raise NotImplementedError
+                # raise NotImplementedError
                 compute_loss = loss + train_param.time_regularization_weight * loss_regularization
             else:
                 if sigma is None:

@@ -7,7 +7,7 @@ model:
     hidden_dim: 1024
     ape: True
     depths: [2]
-    patch_size: [1,1,1]
+    patch_size: [1,1]
     fusion_layers: [4,12]
     fusion_window_size: [4,8,1]
     fusion_hidden_size: [1024,1024]
@@ -60,8 +60,8 @@ train:
       T_max: 87500
       eta_min: 1.0e-8
       warmup_steps: 1000
-  n_epochs: 50  
-  ckpt_dir: /home/gaoziyi/weather/deepspeed_checkpoint
+  n_epochs: 100  
+  ckpt_dir: /mnt/vepfs/devel/weather/deepspeed_checkpoint
   device: cuda:0
   autoregressive: True
   validate_step : 2000
@@ -92,7 +92,7 @@ train:
 
   deepspeed_config: ./cfgs/deepspeed.json
   deepspeed_config_yaml:
-    train_batch_size: 32
+    train_batch_size: 64
     train_micro_batch_size_per_gpu: 8  
     optimizer:
       type: Adam

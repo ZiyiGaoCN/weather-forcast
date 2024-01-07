@@ -1,8 +1,8 @@
 data: 
   data_path : /dev/shm/store/checkpoint/original_dataset
   npy_name: /dev/shm/store/original_dataset/dataset.npy
-  # buffer_folder: /home/gaoziyi/weather/finetune-buffer
-  large_buffer_folder: /home/gaoziyi/weather/finetune-buffer
+  # buffer_folder: /mnt/vepfs/devel/weather/finetune-buffer
+  large_buffer_folder: /mnt/vepfs/devel/weather/finetune-buffer
   buffer_folder: /dev/shm/store/buffer
   buffer_size: 2000
   epoch_size: 6400
@@ -19,11 +19,11 @@ data:
 
 finetune: 
   # original_dir: ../dataset
-  # initialize_checkpoint: /home/gaoziyi/weather/deepspeed_checkpoint/multivarible-swin-192-patch1-[1,1,6]-uncertainty-fusion-layer/step_86000/mp_rank_00_model_states.pt
-  # initialize_checkpoint: /home/gaoziyi/weather/deepspeed_checkpoint/singlevariable-384-patch1-meaninguncertainty-4-clipping/step_66000/mp_rank_00_model_states.pt
-  initialize_checkpoint: /home/gaoziyi/weather/deepspeed_checkpoint/singlevariable-384-patch1-meaninguncertainty-4-clipping/step_86000/mp_rank_00_model_states.pt
-  # initialize_checkpoint: /home/gaoziyi/weather/deepspeed_checkpoint/multivarible-swin-96-patch1-[1,1,6]-uncertainty-fusion-layer/step_86000/mp_rank_00_model_states.pt
-  # initialize_checkpoint: /home/gaoziyi/weather/finetune_checkpoint/singlevariable-384-patch1-meaninguncertainty-4-clipping_step_86000_yl/step_40000/mp_rank_00_model_states.pt
+  # initialize_checkpoint: /mnt/vepfs/devel/weather/deepspeed_checkpoint/multivarible-swin-192-patch1-[1,1,6]-uncertainty-fusion-layer/step_86000/mp_rank_00_model_states.pt
+  # initialize_checkpoint: /mnt/vepfs/devel/weather/deepspeed_checkpoint/singlevariable-384-patch1-meaninguncertainty-4-clipping/step_66000/mp_rank_00_model_states.pt
+  initialize_checkpoint: /mnt/vepfs/devel/weather/deepspeed_checkpoint/singlevariable-384-patch1-meaninguncertainty-4-clipping/step_86000/mp_rank_00_model_states.pt
+  # initialize_checkpoint: /mnt/vepfs/devel/weather/deepspeed_checkpoint/multivarible-swin-96-patch1-[1,1,6]-uncertainty-fusion-layer/step_86000/mp_rank_00_model_states.pt
+  # initialize_checkpoint: /mnt/vepfs/devel/weather/finetune_checkpoint/singlevariable-384-patch1-meaninguncertainty-4-clipping_step_86000_yl/step_40000/mp_rank_00_model_states.pt
 train:   
   optimizer:
     name: Adam
@@ -36,7 +36,7 @@ train:
       warmup_steps: 1000
   time_regularization: False
   n_epochs: 350
-  ckpt_dir: /home/gaoziyi/weather/finetune_checkpoint
+  ckpt_dir: /mnt/vepfs/devel/weather/finetune_checkpoint
   device: cuda:6
   uncertainty_loss: False
   validate_step: 2000
