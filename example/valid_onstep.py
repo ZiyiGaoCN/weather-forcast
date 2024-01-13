@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "../")))
 
 from dataset.dataset_torch import WeatherDataet_numpy
 import torch
-from weather_forcast.validate import validate_20step
+from weather_forcast.validate import validate_onestep
 from weather_forcast.utils import initial_model
 from loguru import logger 
 
@@ -34,8 +34,8 @@ cfg = config
 base_path = cfg.data.npy_name
 data_ori = np.memmap(base_path, dtype = 'float32',mode = 'c', shape = tuple(cfg.data.shape) , order = 'C')
     
-train_set = WeatherDataet_numpy(data_ori,range=[55000,55480],step=20)
-valid_set = WeatherDataet_numpy(data_ori,range=[57000,58436],step=20)
+train_set = WeatherDataet_numpy(data_ori,range=[55000,55480],step=1)
+valid_set = WeatherDataet_numpy(data_ori,range=[56000,57000],step=1)
 from torch.utils.data import DataLoader
 train_dataloader = DataLoader(train_set, batch_size=160, shuffle=True, num_workers=4)
 dataloader = DataLoader(valid_set, batch_size=160, shuffle=True, num_workers=4)
@@ -72,18 +72,18 @@ model.to(args.device)
 
 logger.info('start eval on train set')
 
-train_rmses,train_accs = validate_20step(model,train_dataloader)
+train_rmses,train_accs = validate_onestep(model,train_dataloader)
 train_rmses = np.array(train_rmses)
 train_accs = np.array(train_accs)
 
-np.save(f'evaluation/{concat_name}/train_rmses.npy',train_rmses)
-np.save(f'evaluation/{concat_name}/train_accs.npy',train_accs)
+np.save(f'evaluation/{concat_name}/trainone_rmses.npy',train_rmses)
+np.save(f'evaluation/{concat_name}/trainone_accs.npy',train_accs)
 
 logger.info('start eval on valid set')
 
-rmses,accs = validate_20step(model,dataloader)
+rmses,accs = validate_onestep(model,dataloader)
 rmses = np.array(rmses)
 accs = np.array(accs)
 
-np.save(f'evaluation/{concat_name}/rmses.npy',rmses)
-np.save(f'evaluation/{concat_name}/accs.npy',accs)
+np.save(f'evaluation/{concat_name}/validone_rmses.npy',rmses)
+np.save(f'evaluation/{concat_name}/validone_accs.npy',accs)

@@ -1,3 +1,5 @@
+import loguru
+import numpy
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
@@ -5,6 +7,17 @@ from einops import rearrange
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import math
 from loguru import logger
+
+class ForwardWrapper():
+    def __init__(self, func):   
+        self.func = func
+    def __call__(self, **kwargs):
+        if kwargs.get('debug',False):
+            logger.debug(f"ForwardWrapper: {self.func.__name__}")
+            out, logs = self.func(**kwargs)
+            return out, logs
+        else:
+            return self.func(**kwargs)
 
 class Maxmin_variance(nn.Module):
     def __init__(self, dim=(1,68,32,64)):
@@ -849,7 +862,7 @@ class WindowAttention_3D(nn.Module):
         # trunc_normal_(self.relative_position_bias_table, std=.02)
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, mask=None):
+    def forward(self, x, mask=None,debug= False, **kwargs):
         """
         Args:
             x: input features with shape of (num_windows*B, N, C)
@@ -872,9 +885,9 @@ class WindowAttention_3D(nn.Module):
         K = { k: qkv[k][1] for k in self.variable_order}
         V = { k: qkv[k][2] for k in self.variable_order}
 
-        Q = torch.cat([Q[k] for k in self.variable_order],dim=1)
-        K = torch.cat([K[k] for k in self.variable_order],dim=1)
-        V = torch.cat([V[k] for k in self.variable_order],dim=1)
+        Q = torch.cat([Q[k] for k in self.variable_order],dim=2)
+        K = torch.cat([K[k] for k in self.variable_order],dim=2)
+        V = torch.cat([V[k] for k in self.variable_order],dim=2)
 
         Q = Q * self.scale
         attn = (Q @ K.transpose(-2, -1))
@@ -893,6 +906,13 @@ class WindowAttention_3D(nn.Module):
         attn = self.softmax(attn)
 
         attn = self.attn_drop(attn)
+        
+        if debug: 
+            logger.info(f"attn_windows shape: {attn.shape}")
+            logger.info(f"Hello!")
+            numpy.save("attn_windows.npy",attn.cpu().detach().numpy())
+            raise Exception("Debug")
+            # return attn_windows
 
         x = (attn @ V).transpose(1, 2).reshape(B_, big_N, C)
 
@@ -934,6 +954,11 @@ def timestep_embedding(timestep,dim, max_period=10000):
     freqs = torch.exp(
         -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
     )
+    if isinstance(timestep, int):
+        pass
+    elif len(timestep.shape) == 1:
+        timestep = timestep.unsqueeze(-1)
+        
     args = timestep * freqs.unsqueeze(0)
     embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
     return embedding
@@ -1019,7 +1044,7 @@ class SwinTransformerBlock_3D(nn.Module):
         # attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
 
         # self.register_buffer("attn_mask", attn_mask)
-    def forward(self, x , timestep_embedding=None):
+    def forward(self, x , timestep_embedding=None, debug = False):
         H0, W0, Z0 = self.input_resolution
         B, H, W, Z, C = x[self.variable_order[0]].shape
         assert H == H0 and W == W0 and Z == Z0, f"input feature has wrong size,{H,W,Z},{H0,W0,Z0}"
@@ -1054,7 +1079,9 @@ class SwinTransformerBlock_3D(nn.Module):
         x_windows = { k: v.view(-1, self.window_size[0] * self.window_size[1] * self.window_size[2], C) for k, v in x_windows.items() }  # nW*B, window_size*window_size, C
 
         # W-MSA/SW-MSA
-        attn_windows = self.attn(x_windows, mask=None)  # nW*B, window_size*window_size, C
+        attn_windows = self.attn(x_windows, mask=None,debug=False)  # nW*B, window_size*window_size, C
+
+
 
         # merge windows
         # attn_windows = attn_windows.view(-1, self.window_size[0], self.window_size[1], self.window_size[2], C)
@@ -1524,7 +1551,7 @@ class Fusion(nn.Module):
             
         
 
-    def forward(self, x, timestep = None):
+    def forward(self, x, timestep = None, debug =False):
         
         B, H, W, Z, C = x[self.variable_order[0]].shape
         # x = self.proj(x)
@@ -1545,7 +1572,7 @@ class Fusion(nn.Module):
             t = None
         
         for layer in self.layers:
-            x = layer(x,t)
+            x = layer(x,t,debug=debug)
         x = {
             k: self.proj_out[k](x[k]) for k in self.variable_order
         }
@@ -1674,7 +1701,9 @@ class Model(nn.Module):
             )
             for k,v in variable_dict.items()
         })
-    def forward(self, x, timestep = None):
+    
+    # @ForwardWrapper
+    def forward(self, x, timestep = None, debug = False):
         x_varibles = {}
         acc = 0
         
@@ -1714,7 +1743,7 @@ class Model(nn.Module):
 
 
         for i,fusion in enumerate(self.fusions):
-            x_downsample[i]=fusion(x_downsample[i],timestep)
+            x_downsample[i]=fusion(x_downsample[i],timestep,debug=debug)
         
         # for i in range(2):
         #     x_downsample[i] = torch.split(x_downsample[i],[1 for _ in self.variable_order],dim=-2)
@@ -1739,7 +1768,7 @@ class Model(nn.Module):
             sigma = sigma[:,restore_indices,:,:]
             logvar_min = logvar_min[:,restore_indices,:,:]
             logvar_max = logvar_max[:,restore_indices,:,:]
-            return final_tensor, sigma, logvar_min, logvar_max
+            return final_tensor, sigma, logvar_min, logvar_max 
         else:
             final = torch.cat([final[k] for k in self.variable_order],dim=1)
         # final = final.squeeze(1).permute(0,3,1,2).contiguous()

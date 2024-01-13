@@ -115,8 +115,13 @@ def train(train_param,model_param, model, train_set, valid_set=None,valid_set_20
                 time_embed_AB = time_embed_A + time_embed_B
                 with torch.no_grad():
                     half_output = model_engine(input,time_embed_A)
+                    if train_param.uncertainty_loss:
+                        half_output = half_output[0]
                 outputs_regularization = model_engine(half_output,time_embed_B)
                 target_regularization = model_engine(input,time_embed_AB)
+                if train_param.uncertainty_loss:
+                    outputs_regularization = outputs_regularization[0]
+                    target_regularization = target_regularization[0]
                 loss_regularization = F.mse_loss(input=outputs_regularization, target=target_regularization)
             
             

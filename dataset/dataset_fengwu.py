@@ -22,7 +22,8 @@ class Dataset_Fengwu(Dataset):
                  map_id = None, buffer_file = None , size = 20000 ,
                  transform=None, target_transform=None,
                  uncertainty_finetune= False ,
-                 channul_range=(0,112), preload = False) -> None:
+                 channul_range=(0,112), preload = False,
+                 multi_step = False) -> None:
         super().__init__()
         
         self.transform = transform
@@ -45,6 +46,7 @@ class Dataset_Fengwu(Dataset):
         self.buffer_dataset_target = np.memmap(buffer_file.replace('.npy','_target.npy'), dtype = 'float32',mode = 'w+', shape = (size, self.data.shape[1], self.data.shape[2], self.data.shape[3]) , order = 'C')
         self.buffer_dataset_time = np.memmap(buffer_file.replace('.npy','_time.npy'), dtype = 'int64',mode = 'w+', shape = (size) , order = 'C')
         self.buffer_dataset_step = np.memmap(buffer_file.replace('.npy','_step.npy'), dtype = 'int64',mode = 'w+', shape = (size) , order = 'C')
+        self.buffer_dataset_time_step = np.memmap(buffer_file.replace('.npy','_time_embed.npy'), dtype = 'int64',mode = 'w+', shape = (size) , order = 'C')
         self.buffer_dataset_sigma = np.memmap(buffer_file.replace('.npy','_sigma.npy'), dtype = 'int64',mode = 'w+', shape = (size,self.data.shape[1]) , order = 'C')
         current_size = 0
         for i in range(20):
@@ -54,16 +56,21 @@ class Dataset_Fengwu(Dataset):
                 sigma = self.replay_sigma[i,self.map_id[i],...]
             else: 
                 input = self.data[self.map_id[i],...]
-                time = self.map_id[i] + 1
+                time = self.map_id[i]
                 sigma = np.zeros((input.shape[0],input.shape[1])) 
+            if multi_step:
+                time_step = np.random.randint(1, min(4,20-i) + 1 ,(input.shape[0],))
+            else:
+                time_step = np.ones_like(time)
             
-            target = self.data[time,...]
+            target = self.data[time + time_step,...]
             step = np.ones_like(time)*i
             batch_size = input.shape[0]
             self.buffer_dataset_input[current_size:current_size+batch_size,...] = input
             self.buffer_dataset_target[current_size:current_size+batch_size,...] = target
             self.buffer_dataset_time[current_size:current_size+batch_size] = time
             self.buffer_dataset_step[current_size:current_size+batch_size] = step
+            self.buffer_dataset_time_step[current_size:current_size+batch_size] = time_step
             self.buffer_dataset_sigma[current_size:current_size+batch_size] = sigma
             current_size += batch_size
         print(current_size,size)
@@ -83,7 +90,8 @@ class Dataset_Fengwu(Dataset):
         sigma = torch.from_numpy(np.array(self.buffer_dataset_sigma[id: id + 1,:])).view(1,-1,1,1)
         eps = torch.randn_like(input)
         input = input + sigma * eps
-        return input, target, time, step
+        time_embed = torch.from_numpy(np.array(self.buffer_dataset_time_step[id]))       
+        return input, target, time, step, time_embed
 
 class Replay_buffer_fengwu():
 
@@ -209,7 +217,7 @@ class Replay_buffer_fengwu():
         return ids
                 
     
-    def build_dataset(self, size = 10000, sample_ratio=None, uncertainty_finetune=False):
+    def build_dataset(self, size = 10000, sample_ratio=None, uncertainty_finetune=False, multi_step = False):
         # ban: [self.idx, self.idx + size]
         
         if sample_ratio is None:
@@ -225,7 +233,8 @@ class Replay_buffer_fengwu():
                                 size = size,
                                 transform=self.transform, target_transform=self.target_transform, 
                                 uncertainty_finetune = uncertainty_finetune,
-                                channul_range=self.channel_range, preload = False)
+                                channul_range=self.channel_range, preload = False,
+                                multi_step = multi_step)
              
 
     # def __getitem__(self, idx):

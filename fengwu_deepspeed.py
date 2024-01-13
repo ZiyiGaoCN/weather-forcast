@@ -9,6 +9,9 @@ Link to the paper: https://arxiv.org/abs/2002.04155
 """
 
 from http import client
+
+from pandas.core.indexes import multi
+import weather_forcast
 from weather_forcast.utils import initial_model
 import hydra
 import numpy as np
@@ -195,7 +198,8 @@ def main(cfg:DictConfig):
             sample_ratio= None 
         loguru.logger.info(f'sample_ratio:{sample_ratio}')
 
-        dataset = Replay_Buffer.build_dataset(size=cfg.data.epoch_size,sample_ratio=sample_ratio)
+        dataset = Replay_Buffer.build_dataset(size=cfg.data.epoch_size,sample_ratio=sample_ratio,
+                                              multi_step=cfg.train.multi_step)
         loguru.logger.info('Data sampled')
                 
         trainloader = model_engine.deepspeed_io(dataset)
@@ -203,7 +207,7 @@ def main(cfg:DictConfig):
 
         r_step = 0
         model.train()
-        for i,(input,target,time, time_step) in enumerate(tqdm.tqdm(trainloader)):
+        for i,(input,target,time, time_step, time_embed) in enumerate(tqdm.tqdm(trainloader)):
             # Send input and output data to the GPU/CPU
             input = input.to(model_engine.device)
             target = target.to(model_engine.device)
@@ -214,7 +218,11 @@ def main(cfg:DictConfig):
             B, in_seq, C_in, H, W = input.shape
             B, out_seq, C_out, H, W = target.shape
             
-            time_embed = 1 if model.time_embed else None
+            # time_embed = 1 if model.time_embed else None
+            # if cfg.train.multi_step: 
+            #     time_embed = torch.randint(1, 5, (B,))
+            # else:
+            #     time_embed = 1 if model.time_embed else None
             
             input = input.view(B, in_seq*C_in, H, W)
             target = target.view(B, out_seq*C_out, H, W)
@@ -283,8 +291,13 @@ def main(cfg:DictConfig):
                     
             model_engine.step() 
             
-            time += 1
-            time_step += 1
+            # time += 1
+            if not model.time_embed:
+                time += 1
+                time_step += 1
+            else :
+                time += time_embed
+                time_step = time_step + time_embed
             Replay_Buffer.add_buffer_20step(
                 outputs.detach().cpu().numpy(), time.detach().cpu().numpy(), time_step.detach().cpu().numpy(),
                 sigma=np.exp(sigma_mean.detach().cpu().numpy()) if hasattr(cfg.train,'uncertainty_finetune') and cfg.train.uncertainty_finetune else None
